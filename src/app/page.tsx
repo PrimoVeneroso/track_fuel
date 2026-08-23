@@ -14,6 +14,7 @@ import type { AppSettings, Refuel, VehiclesData, Vehicle } from "@/lib/fuel/type
 import { emptyVehiclesData, sortRefuels } from "@/lib/fuel/types";
 import { computeStats } from "@/lib/fuel/calc";
 import { setDataStore, setSettingsStore, useFuelStore } from "@/lib/fuel/store";
+import { purgeLegacyLocalStorage } from "@/lib/fuel/persistence";
 import {
   applyImport,
   createRefuel,
@@ -74,6 +75,14 @@ export default function FuelLogApp() {
       });
     }
   }, []);
+
+  /* ---------- Notifica migrazione localStorage → IndexedDB ---------- */
+  useEffect(() => {
+    const onMigrated = () =>
+      toast.show("Dati migrati da localStorage al database locale IndexedDB.", "info");
+    window.addEventListener("fuellog:migrated", onMigrated);
+    return () => window.removeEventListener("fuellog:migrated", onMigrated);
+  }, [toast.show]);
 
   /* ---------- Selezione veicolo attivo (derivata, senza side-effect) ---------- */
   const activeVehicle: Vehicle | null = useMemo(() => {
@@ -293,6 +302,8 @@ export default function FuelLogApp() {
   const resetAll = useCallback(() => {
     setEditingRefuel(null);
     setData(emptyVehiclesData());
+    // Rimuove anche le chiavi localStorage legacy (snapshot pre-migrazione)
+    purgeLegacyLocalStorage();
     toast.show("Tutti i dati sono stati cancellati.", "success");
   }, [toast]);
 
@@ -577,12 +588,23 @@ export default function FuelLogApp() {
           </p>
         </div>
         <div className="info-block">
+          <h3>Archivio dati</h3>
+          <p>
+            I dati sono salvati nel database locale <code>IndexedDB</code> del dispositivo: più
+            capiente e affidabile di <code>localStorage</code> (da cui vengono migrati
+            automaticamente), e accessibile sia nel browser sia dentro la WebView di un APK. Il
+            layer di archiviazione è isolato: in futuro è possibile passare a SQLite nativo
+            (Capacitor) senza modificare interfaccia e calcoli.
+          </p>
+        </div>
+        <div className="info-block">
           <h3>Installazione (PWA → APK)</h3>
           <p>
             L&apos;app è una PWA autonoma: dopo la prima apertura funziona offline. Per generare un
             APK Android pubblicala su un host statico (es. pagine GitHub) e usa{" "}
-            <code>PWABuilder</code>, oppure incapsula la build con <code>Capacitor</code>. Nessun
-            servizio esterno viene contattato in esecuzione.
+            <code>PWABuilder</code>, oppure incapsula la build con <code>Capacitor</code>: in
+            entrambi i casi IndexedDB persiste nel filesystem dell&apos;app. Nessun servizio
+            esterno viene contattato in esecuzione.
           </p>
         </div>
       </Modal>

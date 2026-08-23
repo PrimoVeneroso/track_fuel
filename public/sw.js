@@ -5,7 +5,7 @@
  * Zero richieste verso origin esterne.
  */
 
-const CACHE = "fuellog-v1";
+const CACHE = "fuellog-v2";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",

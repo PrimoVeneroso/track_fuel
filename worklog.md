@@ -28,3 +28,24 @@ Stage Summary:
 - Zero dipendenze esterne a runtime: nessuna CDN, nessun backend, nessuna telemetria; dati solo in localStorage (chiavi `vehicles_data`, `app_settings`).
 - Lint pulito (`bun run lint` senza errori), dev server OK su porta 3000, tutti i flussi golden-path verificati nel browser.
 - Stato localStorage al termine: dati demo "Panda" (2 rifornimenti: pieno 10000 km/40 L/60 € + parziale 10600 km/22 L/33 € → 27,27 km/l), unità metrica.
+
+---
+Task ID: 2
+Agent: main-agent (Z.ai Code)
+Task: Migrazione architettura storage da localStorage a IndexedDB (Opzione D dell'utente: SPA statica + IndexedDB, compatibile PWABuilder; scelta motivata rispetto all'Opzione C Capacitor+SQLite).
+
+Work Log:
+- Analizzate le opzioni dell'utente (C: Capacitor + SQLite nativo; D: SPA statica + IndexedDB). Scelta D: zero configurazioni, 100% PWABuilder, e IndexedDB persiste anche nella WebView Capacitor → non preclude la C.
+- Creato `src/lib/fuel/idb.ts`: wrapper IndexedDB (db "fuellog" v1): store "vehicles" (keyPath id, rifornimenti annidati nel documento) + store "kv" (settings, activeVehicleId, schemaVersion, flag migrazione). API promisificata (getAllVehicles, replaceAllVehicles atomico, getKV/setKV/deleteKV, clearAll).
+- Creato `src/lib/fuel/persistence.ts`: loadState() con migrazione automatica al primo avvio da localStorage legacy (`vehicles_data`/`app_settings`, riusando la sanificazione esistente), flag `migratedFromLocalStorage` per evitare ri-migrazione; persistData/persistSettings con fallback automatico su localStorage se IndexedDB non disponibile; purgeLegacyLocalStorage() esportato per il reset esplicito. Layer isolato: sostituibile con adattatore SQLite Capacitor senza toccare UI/store.
+- Riscritto `src/lib/fuel/store.ts`: caricamento asincrono avviato a livello di modulo (solo client, prima del render → getSnapshot pura), useSyncExternalStore con snapshot server costante (nessun mismatch idratazione), notifica al completamento (splash → dati reali), evento CustomEvent "fuellog:migrated" per il toast one-shot di migrazione.
+- `page.tsx`: listener evento migrazione con toast info; resetAll ora invoca anche purgeLegacyLocalStorage(); nuovo blocco info "Archivio dati" (IndexedDB, percorso futuro a SQLite); aggiornato blocco installazione (IndexedDB persiste in APK PWABuilder e WebView Capacitor).
+- `data-modal.tsx`: testo privacy aggiornato (IndexedDB primario, migrazione automatica, snapshot localStorage conservato fino all'azzeramento esplicito).
+- `public/sw.js`: cache bumpata a fuellog-v2.
+- Verifica browser end-to-end: migrazione legacy→IDB (dashboard 27,27 km/l corretta, store IDB con Panda:2 refuels + 4 chiavi kv), toast migrazione visualizzato, nuovo rifornimento → persistenza dopo reload con localStorage completamente rimosso (IDB fonte di verità, 3 refuels, 26,09 km/l esatto), import JSON con sovrascrittura (IDB = Panda:1 + "Nuova dal backup":2, settings sovrascritti), reset totale (IDB veicoli=0, flag migrazione preservato, localStorage vuoto, UI a stato iniziale), ricreazione demo via UI con persistenza confermata, nessun errore console, lint pulito.
+
+Stage Summary:
+- Storage primario = IndexedDB locale (Opzione D): robusto, asincrono, capiente, zero server/credenziali, 100% compatibile PWABuilder per APK; fallback automatico su localStorage se IndexedDB assente.
+- Migrazione trasparente dai dati localStorage esistenti (snapshot legacy conservato come backup fino al reset esplicito, che ora pulisce anche le chiavi legacy).
+- Architettura a layer (idb → persistence → store → UI) pronta per un eventuale passaggio futuro a SQLite nativo Capacitor (Opzione C) toccando solo persistence.ts.
+- Stato finale demo: veicolo "Panda" con 2 rifornimenti (pieno 10000 km/40 L/60 € + parziale 10600 km/22 L/33 € → 27,27 km/l), unità metrica, dati in IndexedDB.

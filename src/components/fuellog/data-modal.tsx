@@ -129,9 +129,11 @@ export function DataModal({ open, onClose, data, settings, onExport, onImportFil
               Privacy e offline
             </h3>
             <p>
-              Tutti i dati restano nel <code>localStorage</code> di questo dispositivo
-              (<code>vehicles_data</code>, <code>app_settings</code>). Nessuna telemetria, nessun
-              server, nessuna richiesta a cloud o CDN: l&apos;app funziona completamente offline.
+              Tutti i dati risiedono nel database locale <code>IndexedDB</code> di questo
+              dispositivo (i vecchi dati <code>localStorage</code> vengono migrati automaticamente
+              al primo avvio e rimossi solo con l&apos;azzeramento esplicito). Nessuna telemetria,
+              nessun server, nessuna richiesta a cloud o CDN: l&apos;app funziona completamente
+              offline.
             </p>
           </div>
         </>
