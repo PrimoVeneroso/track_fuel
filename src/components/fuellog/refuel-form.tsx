@@ -67,6 +67,60 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
     setError(null);
   };
 
+  const [price, setPrice] = useState<string>(() =>
+    editing && editing.volume > 0 ? (editing.cost / editing.volume).toFixed(3).replace('.', ',') : ""
+  );
+
+  const parseNum = (s: string) => {
+    if (!s) return NaN;
+    return parseFloat(s.replace(',', '.'));
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    set("volume", val);
+    const v = parseNum(val);
+    const c = parseNum(draft.cost);
+    const p = parseNum(price);
+    
+    if (!isNaN(v) && v > 0 && !isNaN(c) && c > 0) {
+      setPrice((c / v).toFixed(3).replace('.', ','));
+    } else if (!isNaN(v) && v > 0 && !isNaN(p) && p > 0) {
+      set("cost", (v * p).toFixed(2).replace('.', ','));
+    }
+  };
+
+  const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    set("cost", val);
+    const c = parseNum(val);
+    const v = parseNum(draft.volume);
+    const p = parseNum(price);
+    
+    if (!isNaN(c) && c > 0 && !isNaN(p) && p > 0 && isNaN(v)) {
+      set("volume", (c / p).toFixed(2).replace('.', ','));
+    } else if (!isNaN(c) && c > 0 && !isNaN(v) && v > 0) {
+      setPrice((c / v).toFixed(3).replace('.', ','));
+    } else if (!isNaN(c) && c > 0 && !isNaN(p) && p > 0) {
+      // Se abbiamo tutti e tre, l'utente sta aggiornando la spesa, ricalcoliamo i litri per coerenza
+      set("volume", (c / p).toFixed(2).replace('.', ','));
+    }
+  };
+
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setPrice(val);
+    const p = parseNum(val);
+    const c = parseNum(draft.cost);
+    const v = parseNum(draft.volume);
+
+    if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
+      set("volume", (c / p).toFixed(2).replace('.', ','));
+    } else if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
+      set("cost", (v * p).toFixed(2).replace('.', ','));
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!vehicle) {
@@ -91,6 +145,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
     });
     if (!editing) {
       setDraft({ ...emptyDraft(), full: draft.full });
+      setPrice("");
       setError(null);
     }
   };
@@ -150,6 +205,23 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
         </div>
 
         <div className="field">
+          <label htmlFor="rf-price">
+            Prezzo al {unit === "metric" ? "litro" : "gallone"}
+            <span className="lbl-hint">{L.currency}/{L.volume}</span>
+          </label>
+          <input
+            id="rf-price"
+            className="input"
+            type="text"
+            inputMode="decimal"
+            placeholder={unit === "metric" ? "es. 1,859" : "es. 3,50"}
+            value={price}
+            onChange={handlePriceChange}
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="field">
           <label htmlFor="rf-vol">
             {L.volumeLong}
             <span className="lbl-hint">{L.volume}</span>
@@ -161,7 +233,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
             inputMode="decimal"
             placeholder={unit === "metric" ? "es. 32,5" : "es. 8,6"}
             value={draft.volume}
-            onChange={(e) => set("volume", e.target.value)}
+            onChange={handleVolumeChange}
             autoComplete="off"
             required
           />
@@ -179,7 +251,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
             inputMode="decimal"
             placeholder={unit === "metric" ? "es. 58,90" : "es. 34,20"}
             value={draft.cost}
-            onChange={(e) => set("cost", e.target.value)}
+            onChange={handleCostChange}
             autoComplete="off"
             required
           />
