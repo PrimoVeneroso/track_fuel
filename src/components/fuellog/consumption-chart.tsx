@@ -14,11 +14,11 @@ export function ConsumptionChart({ refuels, unit }: { refuels: Refuel[]; unit: U
   const x = (index: number) => points.length === 1 ? 300 : 55 + index * 510 / (points.length - 1);
   const y = (value: number) => 190 - value / maximum * 160;
   return (
-    <section className="panel" aria-label="Andamento dei consumi">
-      <div className="panel-head"><h2>Andamento dei consumi</h2></div>
-      {points.length === 0 ? <p>Il grafico apparirà dopo due pieni con distanza percorsa tra loro.</p> : <>
-        <p className="text-dim">Pieni in ordine cronologico · {labels.consumptionPrimary}. I parziali sono inclusi nell’intervallo che termina con il pieno successivo.</p>
-        <svg viewBox="0 0 600 235" role="img" aria-label="Media totale e consumi dei singoli intervalli tra pieni" style={{width: '100%', height: 'auto'}}>
+    <section className="panel" aria-label="Andamento dei consumi stimati">
+      <div className="panel-head"><h2>Andamento dei consumi stimati</h2></div>
+      {points.length === 0 ? <p>Il grafico apparirà dopo due rifornimenti con distanza percorsa tra loro.</p> : <>
+        <p className="text-dim">Rifornimenti in ordine cronologico · {labels.consumptionPrimary}. Stime basate sul carburante aggiunto, inclusi i parziali. Nessun reset ai pieni.</p>
+        <svg viewBox="0 0 600 235" role="img" aria-label="Media totale e consumi dei singoli intervalli tra rifornimenti" style={{width: '100%', height: 'auto'}}>
           {[0, 0.5, 1].map(fraction => <g key={fraction}>
             <line x1="55" x2="565" y1={y(maximum * fraction)} y2={y(maximum * fraction)} stroke="currentColor" opacity="0.2" />
             <text x="45" y={y(maximum * fraction) + 4} textAnchor="end" fill="currentColor" fontSize="12">{fmt(maximum * fraction, 1)}</text>
@@ -32,7 +32,7 @@ export function ConsumptionChart({ refuels, unit }: { refuels: Refuel[]; unit: U
           {points.length > 1 && <text x="565" y="218" textAnchor="end" fill="currentColor" fontSize="12">{fmtDateShort(points[points.length - 1].date)}</text>}
         </svg>
         <p><span style={{color: '#4ade80'}}>● Media totale</span> · <span style={{color: '#60a5fa'}}>■ Singolo intervallo</span></p>
-        <label htmlFor="chart-refuel">Dettaglio del pieno</label>
+        <label htmlFor="chart-refuel">Dettaglio del rifornimento</label>
         <select id="chart-refuel" className="input" value={active?.id ?? ''} onChange={event => setSelected(event.target.value)}>
           {points.map(point => <option key={point.id} value={point.id}>{fmtDateShort(point.date)} · {point.date.slice(11, 16)}</option>)}
         </select>

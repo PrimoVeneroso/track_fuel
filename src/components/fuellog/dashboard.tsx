@@ -38,7 +38,7 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
         <GaugeIcon width={34} height={34} />
         <h3>Registro vuoto</h3>
         <p>
-          Media totale dei consumi: —. Registra almeno due pieni per calcolarla, includendo tutti i rifornimenti parziali intermedi.
+          Registra almeno due rifornimenti, anche parziali, con distanza percorsa tra loro per stimare la media totale.
         </p>
       </div>
     );
@@ -54,7 +54,7 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
         <div className="stat-card hero">
           <span className="stat-label">
             <GaugeIcon width={14} height={14} />
-            Media totale dei consumi
+            Media totale stimata
           </span>
           <span className="stat-value">
             {stats.hasConsumption ? fmt(stats.primaryConsumption, 2) : "—"}
@@ -62,8 +62,8 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
           </span>
           <span className="stat-sub">
             {stats.hasConsumption
-              ? `${fmt(stats.measuredDistance, 0)} ${L.distance} · ${fmt(stats.measuredVolume, 1)} ${L.volume} tra il primo e l’ultimo pieno`
-              : "Servono almeno due pieni con distanza percorsa tra loro"}
+              ? `${fmt(stats.measuredDistance, 0)} ${L.distance} · ${fmt(stats.measuredVolume, 1)} ${L.volume} dal primo rifornimento`
+              : "Servono almeno due rifornimenti con distanza percorsa tra loro"}
           </span>
         </div>
 
@@ -123,11 +123,10 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
         <RotateIcon width={15} height={15} />
         <span>
           {stats.hasConsumption && stats.measuredThrough
-            ? `Media complessiva aggiornata al pieno del ${fmtDateShort(stats.measuredThrough)}. Non si azzera con i nuovi pieni. `
-            : "Il primo pieno stabilisce il livello iniziale del serbatoio. "}
-          {stats.pendingCount > 0
-            ? `${stats.pendingCount} rifornimenti in attesa: i parziali dopo l’ultimo pieno entreranno nella media al prossimo pieno; quelli prima del primo non sono misurabili.`
-            : "Tutti i parziali tra due pieni sono inclusi nella media."}
+            ? `Media cumulativa aggiornata al rifornimento del ${fmtDateShort(stats.measuredThrough)}. `
+            : "Il primo rifornimento fissa l’odometro iniziale. "}
+          Ogni rifornimento successivo è incluso, anche parziale. I pieni non azzerano la media.
+          È una stima basata sul carburante aggiunto: variazioni del livello nel serbatoio possono alterarla.
         </span>
       </p>
     </section>

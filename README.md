@@ -7,9 +7,9 @@ L'app non richiede alcuna registrazione, non possiede un backend, e memorizza tu
 ## ✨ Funzionalità
 - 🚗 **Supporto multi-veicolo**: Tieni traccia di auto, moto o furgoni contemporaneamente.
 - 📊 **Statistiche intelligenti**: Calcolo automatico di:
-  - Consumo medio (km/l o mpg)
+  - Consumo medio cumulativo stimato (km/l o mpg), aggiornato a ogni rifornimento senza reset ai pieni
   - Costo per chilometro o miglio
-  - Spesa e volume totali o per ciclo
+  - Spesa e percorrenza totali
 - 🧮 **Modulo di inserimento avanzato**: Inserendo due valori tra litri, prezzo al litro o spesa totale, l'app calcola automaticamente il terzo.
 - 📱 **100% Offline e Nativa**: Grazie a [Capacitor](https://capacitorjs.com/), l'app è compilata come un vero APK nativo per Android.
 
@@ -20,6 +20,8 @@ L'app non richiede alcuna registrazione, non possiede un backend, e memorizza tu
 - **CI/CD**: GitHub Actions
 
 ## 🚀 Come ottenere l'APK per Android
+Prima della prima build configura i quattro secrets di firma descritti nella [guida Capacitor](./GUIDA_CAPACITOR.md). Servono per installare i successivi APK come aggiornamenti.
+
 Questa repository è configurata per generare automaticamente il file d'installazione per Android (`.apk`) tramite GitHub Actions, ad ogni nuovo commit.
 
 1. Apporta le tue modifiche al codice.
@@ -40,7 +42,8 @@ Per i dettagli su come è stata configurata l'integrazione di Capacitor e risolt
 ## 💻 Sviluppo Locale
 Se vuoi eseguire l'applicazione in locale (nel tuo browser) per testarla:
 ```bash
-npm install
-npm run dev
+nvm use
+bun install --frozen-lockfile
+bun run dev
 ```
 L'app sarà disponibile all'indirizzo [http://localhost:3000](http://localhost:3000).

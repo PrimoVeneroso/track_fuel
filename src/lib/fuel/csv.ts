@@ -1,7 +1,7 @@
 import type { AppSettings, VehiclesData } from './types';
 import { sortRefuels } from './types';
 import { unitLabels } from './format';
-import { triggerFileDownloadOrShare } from './download';
+import { triggerFileDownloadOrShare, type ExportResult } from './download';
 
 // Separatore e decimali per Excel italiano; virgolette per note e nomi liberi.
 function cell(value: string | number): string {
@@ -25,12 +25,12 @@ export function buildHistoryCsv(data: VehiclesData, settings: AppSettings): stri
   return '\uFEFF' + rows.map(row => row.map(cell).join(';')).join('\r\n') + '\r\n';
 }
 
-export function downloadHistoryCsv(data: VehiclesData, settings: AppSettings): boolean {
+export async function downloadHistoryCsv(data: VehiclesData, settings: AppSettings): Promise<ExportResult> {
   try {
     const blob = new Blob([buildHistoryCsv(data, settings)], { type: 'text/csv;charset=utf-8' });
     const filename = `fuellog-storico-${new Date().toISOString().slice(0, 10)}.csv`;
-    return triggerFileDownloadOrShare(blob, filename);
+    return await triggerFileDownloadOrShare(blob, filename);
   } catch {
-    return false;
+    return 'failed';
   }
 }

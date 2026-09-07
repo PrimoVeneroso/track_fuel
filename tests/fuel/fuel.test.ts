@@ -20,20 +20,32 @@ describe('Media totale', () => {
     expect(stats.totalCost).toBe(160);
     expect(stats.costPerDistance).toBeCloseTo(80 / 600);
   });
-  test('mantiene la media durante i parziali successivi', () => {
-    expect(computeStats([...rows, r(4, 1800, 12)], 'metric')!.primaryConsumption).toBe(15);
+  test('aggiorna la media durante i parziali successivi', () => {
+    expect(computeStats([...rows, r(4, 1800, 12)], 'metric')!.primaryConsumption).toBeCloseTo(800 / 52);
   });
   test('accumula intervalli con media ponderata senza reset', () => {
     expect(computeStats([...rows, r(4, 1800, 20, true)], 'metric')!.primaryConsumption).toBeCloseTo(800 / 60);
   });
-  test('non inventa consumi prima di due pieni', () => {
-    expect(computeStats([r(1, 1000, 10), r(2, 1200, 20, true)], 'metric')!.hasConsumption).toBe(false);
+  test('calcola senza pieni ma richiede almeno due registrazioni', () => {
+    expect(computeStats([r(1, 1000, 10), r(2, 1200, 20)], 'metric')!.primaryConsumption).toBe(10);
+    expect(computeStats([r(1, 1000, 10)], 'metric')!.hasConsumption).toBe(false);
     expect(computeStats([], 'metric')).toBeNull();
   });
-  test('esclude i parziali precedenti, ordina e ricalcola dopo cancellazioni', () => {
-    expect(computeStats([rows[2], r(0 + 1, 900, 5), {...rows[0], date: '2025-01-01T13:00'}, rows[1]], 'metric')!.primaryConsumption).toBe(15);
-    expect(computeStats(rows.slice(0, 2), 'metric')!.hasConsumption).toBe(false);
+  test('include tutti i parziali, ordina e ricalcola dopo cancellazioni', () => {
+    expect(computeStats([rows[2], r(0 + 1, 900, 5), {...rows[0], date: '2025-01-01T13:00'}, rows[1]], 'metric')!.primaryConsumption).toBe(700 / 80);
+    expect(computeStats(rows.slice(0, 2), 'metric')!.primaryConsumption).toBe(20);
     expect(computeStats([rows[0], {...rows[1], volume: 20}, rows[2]], 'metric')!.primaryConsumption).toBe(12);
+  });
+  test('i flag pieno non modificano la media e ogni punto rispecchia il cruscotto', () => {
+    const refuels = [...rows, r(4, 1800, 12), r(5, 1900, 8, true)];
+    const allPartial = refuels.map(row => ({...row, full: false}));
+    expect(computeStats(allPartial, 'metric')).toEqual(computeStats(refuels, 'metric'));
+    for (let end = 2; end <= refuels.length; end++) {
+      const prefix = refuels.slice(0, end);
+      expect(consumptionHistory(prefix).at(-1)!.cumulative).toBe(computeStats(prefix, 'metric')!.primaryConsumption!);
+    }
+    expect(computeStats([rows[0], {...rows[1], odometer: 900}], 'metric')!.hasConsumption).toBe(false);
+    expect(consumptionHistory([rows[0], {...rows[1], odometer: 900}])).toEqual([]);
   });
   test('gestisce distanza nulla e unità imperiali', () => {
     expect(computeStats([r(1, 1000, 10, true), r(2, 1000, 10, true)], 'metric')!.hasConsumption).toBe(false);
@@ -70,14 +82,14 @@ describe('Funzioni offline', () => {
     expect(csv).toContain('Volume (L)');
     expect(buildHistoryCsv(data(), {unitSystem: 'imperial'})).toContain('Volume (gal)');
   });
-  test('grafico coerente con la media totale e indipendente dai parziali in attesa', () => {
+  test('grafico aggiornato a ogni parziale e coerente con la media totale', () => {
     const refuels = [...rows, r(4, 1800, 20, true), r(5, 1900, 5)];
     const history = consumptionHistory(refuels);
-    expect(history).toHaveLength(2);
-    expect(history[0].consumption).toBe(15);
-    expect(history[1].consumption).toBe(10);
-    expect(history[1].cumulative).toBe(computeStats(refuels, 'metric')!.primaryConsumption!);
-    expect(consumptionHistory(rows.slice(0, 2))).toEqual([]);
+    expect(history).toHaveLength(4);
+    expect(history[0].consumption).toBe(20);
+    expect(history[2].consumption).toBe(10);
+    expect(history[3].cumulative).toBe(computeStats(refuels, 'metric')!.primaryConsumption!);
+    expect(consumptionHistory(rows.slice(0, 2))).toHaveLength(1);
   });
   test('promemoria solo su modifiche, con scadenza e rinvio', () => {
     const fingerprint = dataFingerprint(data());

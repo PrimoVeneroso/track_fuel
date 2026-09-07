@@ -20,12 +20,11 @@ export function consumptionHistory(refuels: Refuel[]): ConsumptionPoint[] {
   const points: ConsumptionPoint[] = [];
   for (const refuel of sorted) {
     if (!first) {
-      if (refuel.full) first = previous = refuel;
+      first = previous = refuel;
       continue;
     }
     volume += refuel.volume;
     totalVolume += refuel.volume;
-    if (!refuel.full) continue;
     const distance = refuel.odometer - previous!.odometer;
     const totalDistance = refuel.odometer - first.odometer;
     if (totalDistance > 0 && totalVolume > 0) {

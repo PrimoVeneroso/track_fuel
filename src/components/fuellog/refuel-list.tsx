@@ -15,7 +15,7 @@ import { FuelIcon, ListIcon, PencilIcon, RotateIcon, TrashIcon } from "./icons";
 interface RefuelListProps {
   refuels: Refuel[];
   unit: UnitSystem;
-  /** id del rifornimento base del ciclo corrente (primo o ultimo "pieno") */
+  /** id del primo rifornimento, riferimento del calcolo */
   baseId: string | null;
   editingId: string | null;
   onEdit: (refuel: Refuel) => void;
@@ -32,7 +32,7 @@ export function RefuelList({ refuels, unit, baseId, editingId, onEdit, onDelete 
         <h3>Nessun rifornimento</h3>
         <p>
           Usa il modulo qui sopra per registrare il primo rifornimento di questo veicolo. Il primo
-          pieno fissa la base del calcolo.
+          rifornimento fissa la base del calcolo.
         </p>
       </div>
     );
@@ -87,7 +87,7 @@ export function RefuelList({ refuels, unit, baseId, editingId, onEdit, onDelete 
             {isBase ? (
               <p className="refuel-base-note">
                 <RotateIcon width={13} height={13} />
-                Ultimo pieno: riferimento per il prossimo intervallo. La media totale resta conservata.
+                Riferimento iniziale: la media usa la distanza da qui e il carburante aggiunto nei rifornimenti successivi.
               </p>
             ) : null}
 

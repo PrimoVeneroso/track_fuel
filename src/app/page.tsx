@@ -5,10 +5,11 @@
  *
  * - Multi-veicolo con registro e statistiche isolati (localStorage)
  * - Unità Metrica (km, L, €) / Imperiale (mi, gal, $) con etichette dinamiche
- * - Media totale ponderata tra pieni, con parziali inclusi
+ * - Media cumulativa stimata a ogni rifornimento, senza reset
  * - Esportazione/Importazione JSON, zero backend, zero telemetria
  */
 
+import { Capacitor } from "@capacitor/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppSettings, Refuel, VehiclesData, Vehicle } from "@/lib/fuel/types";
 import { emptyVehiclesData, sortRefuels } from "@/lib/fuel/types";
@@ -73,7 +74,14 @@ export default function FuelLogApp() {
 
   /* ---------- Service Worker (funzionamento offline) ---------- */
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
+    if ("serviceWorker" in navigator && Capacitor.isNativePlatform()) {
+      // Gli asset offline sono nell’APK: una cache web non deve nascondere gli aggiornamenti.
+      navigator.serviceWorker.getRegistrations().then(registrations =>
+        Promise.all(registrations.map(registration => registration.unregister()))
+      ).then(() => caches.keys()).then(keys =>
+        Promise.all(keys.filter(key => key.startsWith("fuellog-")).map(key => caches.delete(key)))
+      ).catch(() => { /* Alcune WebView non supportano i service worker. */ });
+    } else if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {
         /* offline: la registrazione verrà ritentata al prossimo avvio */
       });
@@ -246,8 +254,10 @@ export default function FuelLogApp() {
   );
 
   /* ---------- Esporta / Importa / Reset ---------- */
-  const exportData = useCallback(() => {
-    const ok = downloadBackup(data, settings);
+  const exportData = useCallback(async () => {
+    const result = await downloadBackup(data, settings);
+    if (result === "cancelled") return;
+    const ok = result === "saved" || result === "started";
     if (ok) {
       try {
         localStorage.setItem(REMINDER_KEY, JSON.stringify({lastBackupAt: Date.now(), snoozedUntil: 0, fingerprint: dataFingerprint(data)}));
@@ -255,7 +265,7 @@ export default function FuelLogApp() {
       window.dispatchEvent(new Event("fuellog:backup"));
     }
     toast.show(
-      ok ? "Backup JSON scaricato." : "Impossibile creare il file di backup.",
+      ok ? (result === "saved" ? "Backup JSON salvato." : "Esportazione avviata: completa il salvataggio del file.") : "Impossibile salvare il backup. Puoi usare Copia JSON.",
       ok ? "success" : "error"
     );
   }, [data, settings, toast]);
@@ -549,9 +559,11 @@ export default function FuelLogApp() {
         settings={settings}
         onExport={exportData}
         onCopyJSON={copyDataToClipboard}
-        onExportCsv={() => {
-          const ok = downloadHistoryCsv(data, settings);
-          toast.show(ok ? "Esportazione CSV avviata." : "Impossibile esportare il CSV.", ok ? "success" : "error");
+        onExportCsv={async () => {
+          const result = await downloadHistoryCsv(data, settings);
+          if (result === "cancelled") return;
+          const ok = result === "saved" || result === "started";
+          toast.show(ok ? (result === "saved" ? "CSV salvato." : "Esportazione CSV avviata.") : "Impossibile esportare il CSV.", ok ? "success" : "error");
         }}
         onImportFile={importFile}
         onResetAll={resetAll}
@@ -589,14 +601,14 @@ export default function FuelLogApp() {
         <div className="info-block">
           <h3>Motore di calcolo</h3>
           <p>
-            La media totale usa la distanza tra il primo e l’ultimo pieno e tutti i litri
-            aggiunti dopo il primo pieno, incluso quello finale e i parziali intermedi.
-            Si calcola dividendo la distanza totale per i litri totali (km/l o mpg),
-            oppure litri × 100 / distanza (l/100km). Non è una media delle singole medie.
-            Il costo per distanza usa le spese degli stessi rifornimenti.
-            Un nuovo pieno aggiorna la media senza azzerarla. I parziali successivi restano
-            in attesa del prossimo pieno; prima di due pieni la media non è disponibile.
-            Spesa e percorrenza totali comprendono invece tutto lo storico.
+            La media cumulativa stimata divide la distanza tra il primo e l’ultimo rifornimento
+            per tutti i litri aggiunti dopo il primo (km/l o mpg); in l/100km usa litri × 100 / distanza.
+            Il primo rifornimento serve come riferimento dell’odometro: volume e spesa iniziali
+            sono esclusi dalla media e dal costo per distanza. La spesa iniziale resta nella spesa totale.
+            La media si aggiorna a ogni rifornimento, anche parziale, e non si azzera ai pieni.
+            Servono almeno due registrazioni con distanza percorsa tra loro.
+            Il carburante aggiunto non coincide necessariamente con quello consumato:
+            con livelli diversi nel serbatoio la stima può differire dal computer di bordo.
           </p>
         </div>
         <div className="info-block">

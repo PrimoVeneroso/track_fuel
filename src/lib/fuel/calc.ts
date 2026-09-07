@@ -1,7 +1,5 @@
-/** Media ponderata su tutti gli intervalli completati tra pieni.
- * I parziali prima del primo pieno e dopo l'ultimo restano nello storico,
- * ma non misurano ancora un consumo a parità di livello del serbatoio.
- */
+/** Stima cumulativa dal primo rifornimento, senza reset ai pieni.
+ * Il volume aggiunto può differire da quello effettivamente consumato. */
 import type { Refuel, UnitSystem, VehicleStats } from "./types";
 import { sortRefuels } from "./types";
 
@@ -10,11 +8,8 @@ export function computeStats(refuels: Refuel[], unit: UnitSystem): VehicleStats 
   if (!sorted.length) return null;
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
-  const start = sorted.findIndex(r => r.full);
-  let end = start;
-  sorted.forEach((r, i) => { if (r.full) end = i; });
-  const measured = start >= 0 ? sorted.slice(start + 1, end + 1) : [];
-  const measuredDistance = start >= 0 ? sorted[end].odometer - sorted[start].odometer : 0;
+  const measured = sorted.slice(1);
+  const measuredDistance = Math.max(0, last.odometer - first.odometer);
   const measuredVolume = measured.reduce((sum, r) => sum + r.volume, 0);
   const measuredCost = measured.reduce((sum, r) => sum + r.cost, 0);
   const hasConsumption = firstOdometerConflict(sorted) === -1 && measuredDistance > 0 && measuredVolume > 0;
@@ -25,9 +20,8 @@ export function computeStats(refuels: Refuel[], unit: UnitSystem): VehicleStats 
     measuredDistance,
     measuredVolume,
     measuredCount: measured.length,
-    measuredThrough: end >= 0 ? sorted[end].date : null,
-    pendingCount: end >= 0 ? sorted.length - end - 1 : sorted.length,
-    cycleBaseIndex: end,
+    measuredThrough: measured.length ? last.date : null,
+    cycleBaseIndex: 0,
     hasConsumption,
     primaryConsumption: hasConsumption ? measuredDistance / measuredVolume : null,
     secondaryConsumption: hasConsumption && unit === "metric" ? measuredVolume * 100 / measuredDistance : null,

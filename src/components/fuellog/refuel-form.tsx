@@ -272,7 +272,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
           <span className="check-text">
             <span className="check-title">Serbatoio pieno</span>
             <span className="check-desc">
-              Spunta solo se hai riempito il serbatoio: aggiorna la media senza azzerarla.
+              Spunta se hai riempito il serbatoio. La media si aggiorna comunque e non si azzera.
             </span>
           </span>
         </button>

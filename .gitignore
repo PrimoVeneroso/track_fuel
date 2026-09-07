@@ -52,3 +52,9 @@ prompt
 server.log
 # Skills directory
 /skills/
+# Android generated project and signing material
+/android/
+/assets/
+*.keystore
+*.jks
+fueltrack-release.base64

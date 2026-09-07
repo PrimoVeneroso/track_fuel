@@ -5,51 +5,47 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
-
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
+
+    - name: Setup Node.js 24
+      uses: actions/setup-node@v6
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
       with:
-        bun-version: latest
+        bun-version: '1.4.0'
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 24
+    - name: Install locked dependencies
+      run: bun install --frozen-lockfile
 
-    - name: Install dependencies
-      run: bun install
-
-    - name: Install Capacitor
+    - name: Test and build web app
       run: |
-        bun add @capacitor/core @capacitor/android
-        bun add -d @capacitor/cli
+        bun test tests/fuel
+        bun run lint
+        bun run build
 
-    - name: Build Web App
-      run: |
-        bunx prisma generate || true
-        bunx next build
+    - name: Add Android platform
+      run: bunx cap add android
 
-    - name: Initialize Capacitor
+    - name: Generate native icons and sync
       run: |
-        bunx cap init "Fuel Track" "com.fueltrack.app" --web-dir out
-        
-    - name: Add Android Platform
-      run: |
-        bunx cap add android
-
-    - name: Generate Native Icons
-      run: |
-        bun add -d @capacitor/assets
         mkdir -p assets
-        cp public/icons/icon-512.png assets/icon.png || echo "Icon not found, skipping"
-        bunx @capacitor/assets generate --iconBackgroundColor '#0a0e13' --iconBackgroundColorDark '#0a0e13' || echo "Assets generation failed, skipping"
+        cp public/icons/icon-512.png assets/icon.png
+        bunx capacitor-assets generate --android --iconBackgroundColor '#0a0e13' --iconBackgroundColorDark '#0a0e13'
         bunx cap sync android
 
     - name: Set up JDK 21
@@ -57,28 +53,42 @@ jobs:
       with:
         java-version: '21'
         distribution: 'temurin'
-        cache: gradle
 
-    - name: Fix Kotlin Duplicate Classes
+    - name: Restore permanent signing key
+      env:
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       run: |
-        cat <<EOF >> android/app/build.gradle
+        for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+          if [ -z "${!name}" ]; then
+            echo "::error::Secret $name mancante. Configura la firma permanente seguendo GUIDA_CAPACITOR.md. Non vengono generati APK con chiavi temporanee."
+            exit 1
+          fi
+        done
+        umask 077
+        printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fueltrack.keystore"
 
-        configurations.all {
-            resolutionStrategy {
-                exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
-                exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
-            }
-        }
-        EOF
+    - name: Configure native export, version and signing
+      env:
+        ANDROID_VERSION_CODE: ${{ github.run_number }}
+      run: node scripts/prepare-android.mjs
 
-    - name: Build APK
-      working-directory: ./android
+    - name: Build signed APK
+      working-directory: android
+      env:
+        ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/fueltrack.keystore
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       run: |
         chmod +x ./gradlew
-        ./gradlew assembleDebug
+        ./gradlew assembleRelease --no-daemon
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: fuel-track-apk
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+        path: android/app/build/outputs/apk/release/app-release.apk
+        if-no-files-found: error

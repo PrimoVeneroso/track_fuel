@@ -18,7 +18,7 @@ export interface Refuel {
   volume: number;
   /** Spesa totale sostenuta (€ o $ a seconda dell'unità attiva) */
   cost: number;
-  /** Serbatoio pieno: riferimento per misurare gli intervalli tra pieni */
+  /** Annotazione del pieno; non modifica o azzera la media */
   full: boolean;
   /** Note libere (testo, massimo 200 caratteri) */
   notes: string;
@@ -67,20 +67,19 @@ export interface VehicleStats {
   totalCost: number;
   /** Percorrenza totale = odometro ultimo − odometro primo */
   totalDistance: number;
-  /** Ultimo pieno, riferimento per il prossimo intervallo. */
+  /** Primo rifornimento, riferimento iniziale dell’odometro. */
   cycleBaseIndex: number;
   measuredDistance: number;
   measuredVolume: number;
   measuredCount: number;
   measuredThrough: string | null;
-  pendingCount: number;
   /** Consumo primario disponibile? (Δd>0 e volume>0) */
   hasConsumption: boolean;
-  /** km/l (metrico) oppure mpg (imperiale): Δd / volume consumato */
+  /** km/l (metrico) oppure mpg (imperiale): Δd / volume aggiunto dopo il primo rifornimento (stima) */
   primaryConsumption: number | null;
   /** l/100km (solo metrico): volume×100/Δd */
   secondaryConsumption: number | null;
-  /** Costo per unità distanza negli intervalli completati */
+  /** Costo per distanza, usando le spese successive al primo rifornimento */
   costPerDistance: number | null;
 }
 

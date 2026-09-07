@@ -9,7 +9,7 @@ import { DATA_KEY, SETTINGS_KEY, SCHEMA_VERSION, emptyVehiclesData, defaultSetti
 import { firstOdometerConflict } from "./calc";
 import { sortRefuels } from "./types";
 import { sanitizeRefuel, sanitizeVehicle, validateRefuel, uid } from "./validation";
-import { triggerFileDownloadOrShare } from "./download";
+import { triggerFileDownloadOrShare, type ExportResult } from "./download";
 
 export function loadVehiclesData(): VehiclesData {
   if (typeof window === "undefined") return emptyVehiclesData();
@@ -121,7 +121,7 @@ export function buildBackup(data: VehiclesData, settings: AppSettings): BackupFi
   };
 }
 
-export function downloadBackup(data: VehiclesData, settings: AppSettings): boolean {
+export async function downloadBackup(data: VehiclesData, settings: AppSettings): Promise<ExportResult> {
   try {
     const backup = buildBackup(data, settings);
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
@@ -129,9 +129,9 @@ export function downloadBackup(data: VehiclesData, settings: AppSettings): boole
     const pad = (x: number) => String(x).padStart(2, "0");
     const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
     const filename = `fuellog-backup-${stamp}.json`;
-    return triggerFileDownloadOrShare(blob, filename);
+    return await triggerFileDownloadOrShare(blob, filename);
   } catch {
-    return false;
+    return 'failed';
   }
 }
 
