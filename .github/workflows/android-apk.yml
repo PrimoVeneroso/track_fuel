@@ -32,7 +32,9 @@ jobs:
         bun add -d @capacitor/cli
 
     - name: Build Web App
-      run: bun run build
+      run: |
+        bunx prisma generate || true
+        bunx next build
 
     - name: Initialize Capacitor
       run: |
