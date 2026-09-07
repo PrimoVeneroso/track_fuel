@@ -548,6 +548,7 @@ export default function FuelLogApp() {
         data={data}
         settings={settings}
         onExport={exportData}
+        onCopyJSON={copyDataToClipboard}
         onExportCsv={() => {
           const ok = downloadHistoryCsv(data, settings);
           toast.show(ok ? "Esportazione CSV avviata." : "Impossibile esportare il CSV.", ok ? "success" : "error");
