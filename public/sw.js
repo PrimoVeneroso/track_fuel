@@ -6,6 +6,7 @@
  */
 
 const CACHE = "fuellog-v2";
+const BUILD_ASSETS = [];
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -18,7 +19,7 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      await Promise.allSettled(APP_SHELL.map((url) => cache.add(new Request(url, { cache: "reload" }))));
+      await cache.addAll([...APP_SHELL, ...BUILD_ASSETS].map((url) => new Request(url, { cache: "reload" })));
       await self.skipWaiting();
     })()
   );
@@ -28,7 +29,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
+      await Promise.all(keys.filter((k) => k.startsWith("fuellog-") && k !== CACHE).map((k) => caches.delete(k)));
       await self.clients.claim();
     })()
   );
@@ -48,7 +49,7 @@ self.addEventListener("fetch", (event) => {
         try {
           const fresh = await fetch(request);
           const cache = await caches.open(CACHE);
-          cache.put("/", fresh.clone());
+          if (fresh.ok) await cache.put(request, fresh.clone());
           return fresh;
         } catch {
           const cached = (await caches.match(request)) || (await caches.match("/"));

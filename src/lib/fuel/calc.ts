@@ -1,103 +1,41 @@
-/**
- * FuelLog — Motore di calcolo "media cumulativa corretta".
- *
- * Regole (per veicolo, rifornimenti ordinati cronologicamente):
- *
- * 1. Il PRIMO rifornimento registrato fissa distanza iniziale e volume
- *    iniziale e NON è contato nel consumo (serbatoio riempito da vuoto).
- *
- * 2. Ciclo corrente:
- *      Δdistanza        = odometro_ultimo − odometro_base
- *      Volume consumato = Σ volume dei rifornimenti SUCCESSIVI alla base
- *      Spesa di ciclo   = Σ spesa dei rifornimenti SUCCESSIVI alla base
- *    dove la "base" è l'ultimo rifornimento con flag "pieno"
- *    (oppure il primo rifornimento se nessun "pieno" è presente).
- *
- * 3. Un rifornimento con flag "pieno" successivo al primo resetta il ciclo:
- *    la sua distanza diventa la nuova base e il suo volume è escluso
- *    dal consumo del ciclo successivo.
- *
- * 4. Formule:
- *      Metrico:   km/l   = Δd / volume consumato
- *                 l/100km = volume consumato × 100 / Δd
- *      Imperiale: mpg    = Δd / volume consumato
- *      Costo per unità distanza = spesa di ciclo / Δd
- *
- * 5. Totali lifetime (indipendenti dai reset):
- *      Spesa totale     = Σ spesa di TUTTI i rifornimenti
- *      Percorrenza tot. = odometro ultimo − odometro primo
- *
- * Le statistiche sono valori derivati: ricalcolate da zero a ogni
- * modifica/cancellazione di un rifornimento.
+/** Media ponderata su tutti gli intervalli completati tra pieni.
+ * I parziali prima del primo pieno e dopo l'ultimo restano nello storico,
+ * ma non misurano ancora un consumo a parità di livello del serbatoio.
  */
-
 import type { Refuel, UnitSystem, VehicleStats } from "./types";
 import { sortRefuels } from "./types";
 
 export function computeStats(refuels: Refuel[], unit: UnitSystem): VehicleStats | null {
   const sorted = sortRefuels(refuels);
-  const n = sorted.length;
-  if (n === 0) return null;
-
+  if (!sorted.length) return null;
   const first = sorted[0];
-  const last = sorted[n - 1];
-
-  const count = n;
-  const totalCost = sorted.reduce((s, r) => s + (Number.isFinite(r.cost) ? r.cost : 0), 0);
-  const totalDistance = Math.max(0, last.odometer - first.odometer);
-
-  // Base del ciclo corrente: ultimo rifornimento "pieno", altrimenti il primo.
-  let baseIndex = 0;
-  for (let i = 0; i < n; i++) {
-    if (sorted[i].full) baseIndex = i;
-  }
-  const cycleIsReset = baseIndex > 0;
-  const base = sorted[baseIndex];
-
-  const cycleDistance = Math.max(0, last.odometer - base.odometer);
-
-  let cycleVolume = 0;
-  let cycleCost = 0;
-  for (let i = baseIndex + 1; i < n; i++) {
-    cycleVolume += sorted[i].volume;
-    cycleCost += sorted[i].cost;
-  }
-  const cycleCount = n - 1 - baseIndex;
-
-  const hasConsumption = cycleDistance > 0 && cycleVolume > 0;
-
-  let primaryConsumption: number | null = null;
-  let secondaryConsumption: number | null = null;
-  let costPerDistance: number | null = null;
-
-  if (hasConsumption) {
-    primaryConsumption = cycleDistance / cycleVolume;
-    if (unit === "metric") {
-      secondaryConsumption = (cycleVolume * 100) / cycleDistance;
-    }
-    costPerDistance = cycleCost / cycleDistance;
-  }
-
+  const last = sorted[sorted.length - 1];
+  const start = sorted.findIndex(r => r.full);
+  let end = start;
+  sorted.forEach((r, i) => { if (r.full) end = i; });
+  const measured = start >= 0 ? sorted.slice(start + 1, end + 1) : [];
+  const measuredDistance = start >= 0 ? sorted[end].odometer - sorted[start].odometer : 0;
+  const measuredVolume = measured.reduce((sum, r) => sum + r.volume, 0);
+  const measuredCost = measured.reduce((sum, r) => sum + r.cost, 0);
+  const hasConsumption = firstOdometerConflict(sorted) === -1 && measuredDistance > 0 && measuredVolume > 0;
   return {
-    count,
-    totalCost,
-    totalDistance,
-    cycleBaseIndex: baseIndex,
-    cycleIsReset,
-    cycleBaseDate: base.date,
-    cycleDistance,
-    cycleVolume,
-    cycleCost,
-    cycleCount,
+    count: sorted.length,
+    totalCost: sorted.reduce((sum, r) => sum + r.cost, 0),
+    totalDistance: Math.max(0, last.odometer - first.odometer),
+    measuredDistance,
+    measuredVolume,
+    measuredCount: measured.length,
+    measuredThrough: end >= 0 ? sorted[end].date : null,
+    pendingCount: end >= 0 ? sorted.length - end - 1 : sorted.length,
+    cycleBaseIndex: end,
     hasConsumption,
-    primaryConsumption,
-    secondaryConsumption,
-    costPerDistance,
+    primaryConsumption: hasConsumption ? measuredDistance / measuredVolume : null,
+    secondaryConsumption: hasConsumption && unit === "metric" ? measuredVolume * 100 / measuredDistance : null,
+    costPerDistance: hasConsumption ? measuredCost / measuredDistance : null,
   };
 }
 
-/** Verifica la monotonia non-decrescente dell'odometro su una lista
- *  già ordinata per data. Restituisce l'indice del primo conflitto. */
+/** Indice del primo odometro decrescente nella sequenza cronologica. */
 export function firstOdometerConflict(sorted: Refuel[]): number {
   for (let i = 1; i < sorted.length; i++) {
     if (sorted[i].odometer < sorted[i - 1].odometer) return i;

@@ -2,7 +2,7 @@
 
 /**
  * Cruscotto statistiche: le etichette riflettono l'unità attiva.
- * Consumo medio (km/l | mpg), secondario (l/100km, solo metrico),
+ * Media totale dei consumi (km/l | mpg), secondario (l/100km, solo metrico),
  * costo per unità distanza, spesa totale, percorrenza totale.
  */
 
@@ -38,8 +38,7 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
         <GaugeIcon width={34} height={34} />
         <h3>Registro vuoto</h3>
         <p>
-          Registra il primo rifornimento: fissa distanza e volume iniziali e non entra nel calcolo
-          del consumo (serbatoio riempito da vuoto).
+          Media totale dei consumi: —. Registra almeno due pieni per calcolarla, includendo tutti i rifornimenti parziali intermedi.
         </p>
       </div>
     );
@@ -55,7 +54,7 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
         <div className="stat-card hero">
           <span className="stat-label">
             <GaugeIcon width={14} height={14} />
-            Consumo medio
+            Media totale dei consumi
           </span>
           <span className="stat-value">
             {stats.hasConsumption ? fmt(stats.primaryConsumption, 2) : "—"}
@@ -63,10 +62,8 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
           </span>
           <span className="stat-sub">
             {stats.hasConsumption
-              ? `Ciclo corrente · ${stats.cycleCount} ${stats.cycleCount === 1 ? "rifornimento" : "rifornimenti"} · ${fmt(stats.cycleVolume, 1)} ${L.volume}`
-              : stats.cycleCount === 0
-                ? "Nuovo ciclo iniziato: in attesa del primo rifornimento parziale"
-                : "Servono distanza e volume per calcolare il consumo"}
+              ? `${fmt(stats.measuredDistance, 0)} ${L.distance} · ${fmt(stats.measuredVolume, 1)} ${L.volume} tra il primo e l’ultimo pieno`
+              : "Servono almeno due pieni con distanza percorsa tra loro"}
           </span>
         </div>
 
@@ -122,15 +119,17 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
         </div>
       </div>
 
-      {stats.cycleIsReset && stats.cycleBaseDate ? (
-        <p className="cycle-hint">
-          <RotateIcon width={15} height={15} />
-          <span>
-            Ciclo azzerato al rifornimento con serbatoio pieno del {fmtDateShort(stats.cycleBaseDate)}:
-            da quella base ripartono consumo e costi medi.
-          </span>
-        </p>
-      ) : null}
+      <p className="cycle-hint">
+        <RotateIcon width={15} height={15} />
+        <span>
+          {stats.hasConsumption && stats.measuredThrough
+            ? `Media complessiva aggiornata al pieno del ${fmtDateShort(stats.measuredThrough)}. Non si azzera con i nuovi pieni. `
+            : "Il primo pieno stabilisce il livello iniziale del serbatoio. "}
+          {stats.pendingCount > 0
+            ? `${stats.pendingCount} rifornimenti in attesa: i parziali dopo l’ultimo pieno entreranno nella media al prossimo pieno; quelli prima del primo non sono misurabili.`
+            : "Tutti i parziali tra due pieni sono inclusi nella media."}
+        </span>
+      </p>
     </section>
   );
 }

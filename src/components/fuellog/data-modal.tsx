@@ -11,7 +11,6 @@ import { fmtInt } from "@/lib/fuel/format";
 import { DatabaseIcon, DownloadIcon, LockIcon, RotateIcon, UploadIcon } from "./icons";
 import { Modal } from "./modal";
 import { ConfirmView } from "./confirm-view";
-import type { ImportPreview } from "./import-preview";
 
 interface DataModalProps {
   open: boolean;
@@ -19,11 +18,13 @@ interface DataModalProps {
   data: VehiclesData;
   settings: AppSettings;
   onExport: () => void;
+  onExportCsv: () => void;
+  onCopyJSON: () => void;
   onImportFile: (file: File) => void;
   onResetAll: () => void;
 }
 
-export function DataModal({ open, onClose, data, settings, onExport, onImportFile, onResetAll }: DataModalProps) {
+export function DataModal({ open, onClose, data, settings, onExport, onExportCsv, onCopyJSON, onImportFile, onResetAll }: DataModalProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -59,19 +60,35 @@ export function DataModal({ open, onClose, data, settings, onExport, onImportFil
               Esportazione
             </h3>
             <p>
-              Scarica tutti i veicoli, i rifornimenti e le impostazioni in un singolo file JSON
-              locale ({fmtInt(data.vehicles.length)} veicoli · {fmtInt(totalRefuels)} rifornimenti ·
+              Salva una copia completa di tutti i dati (incluse le impostazioni come
               unità {settings.unitSystem === "metric" ? "metrica" : "imperiale"}).
             </p>
-            <button
-              type="button"
-              className="btn btn-primary btn-block"
-              onClick={onExport}
-              disabled={data.vehicles.length === 0}
-            >
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ flex: 1, minWidth: '200px' }}
+                onClick={onExport}
+                disabled={data.vehicles.length === 0}
+              >
+                <DownloadIcon width={18} height={18} />
+                Esporta backup JSON
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ flex: 1, minWidth: '200px' }}
+                onClick={onCopyJSON}
+                disabled={data.vehicles.length === 0}
+              >
+                📋 Copia JSON
+              </button>
+            </div>
+            <button type="button" className="btn btn-secondary btn-block" style={{marginTop: 10}} onClick={onExportCsv} disabled={totalRefuels === 0}>
               <DownloadIcon width={18} height={18} />
-              Esporta backup JSON
+              Esporta storico CSV (Excel)
             </button>
+            <p style={{marginTop: 10}}>Il CSV contiene tutti i rifornimenti ed è adatto a Excel e LibreOffice. Per ripristinare l’app usa il backup JSON. Entrambi si creano offline.</p>
           </div>
 
           <div className="info-block">
@@ -80,9 +97,9 @@ export function DataModal({ open, onClose, data, settings, onExport, onImportFil
               Importazione
             </h3>
             <p>
-              Carica un file di backup <code>fuellog-backup-*.json</code>: potrai scegliere se
+              Carica o incolla un JSON di backup <code>fuellog-backup-*.json</code>: potrai scegliere se
               <strong> sovrascrivere</strong> i dati locali o <strong>unirli</strong> (i veicoli con
-              lo stesso nome/id vengono fusi).
+              lo stesso id vengono fusi).
             </p>
             <input
               ref={fileRef}
@@ -96,14 +113,37 @@ export function DataModal({ open, onClose, data, settings, onExport, onImportFil
                 e.target.value = "";
               }}
             />
-            <button
-              type="button"
-              className="btn btn-secondary btn-block"
-              onClick={() => fileRef.current?.click()}
-            >
-              <UploadIcon width={18} height={18} />
-              Importa da file JSON
-            </button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ flex: 1, minWidth: '200px' }}
+                onClick={() => fileRef.current?.click()}
+              >
+                <UploadIcon width={18} height={18} />
+                Importa da file JSON
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ flex: 1, minWidth: '200px' }}
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    if (!text || !text.includes('vehicles')) {
+                      alert('Gli appunti non sembrano contenere un backup JSON valido.');
+                      return;
+                    }
+                    const file = new File([text], 'appunti-backup.json', { type: 'application/json' });
+                    onImportFile(file);
+                  } catch (e) {
+                    alert('Impossibile leggere dagli appunti. Prova a usare il caricamento da file.');
+                  }
+                }}
+              >
+                📋 Incolla JSON
+              </button>
+            </div>
           </div>
 
           <div className="info-block">
@@ -142,4 +182,4 @@ export function DataModal({ open, onClose, data, settings, onExport, onImportFil
   );
 }
 
-export type { ImportPreview };
+export type { ImportPreview } from "./import-preview";

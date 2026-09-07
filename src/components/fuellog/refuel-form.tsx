@@ -36,7 +36,7 @@ const emptyDraft = (): RefuelDraft => ({
   odometer: "",
   volume: "",
   cost: "",
-  full: true,
+  full: false,
   notes: "",
 });
 
@@ -144,7 +144,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
       notes: result.value.notes,
     });
     if (!editing) {
-      setDraft({ ...emptyDraft(), full: draft.full });
+      setDraft(emptyDraft());
       setPrice("");
       setError(null);
     }
@@ -272,9 +272,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
           <span className="check-text">
             <span className="check-title">Serbatoio pieno</span>
             <span className="check-desc">
-              {editing?.id && lastRefuel && editing.id === lastRefuel.id
-                ? "Riempi fino all'orlo: azzererà il ciclo di calcolo"
-                : "Spunta per azzerare il ciclo: questo rifornimento diventa la nuova base"}
+              Spunta solo se hai riempito il serbatoio: aggiorna la media senza azzerarla.
             </span>
           </span>
         </button>

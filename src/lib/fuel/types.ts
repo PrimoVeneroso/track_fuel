@@ -18,7 +18,7 @@ export interface Refuel {
   volume: number;
   /** Spesa totale sostenuta (€ o $ a seconda dell'unità attiva) */
   cost: number;
-  /** Flag "serbatoio pieno": resetta il ciclo di calcolo cumulativo */
+  /** Serbatoio pieno: riferimento per misurare gli intervalli tra pieni */
   full: boolean;
   /** Note libere (testo, massimo 200 caratteri) */
   notes: string;
@@ -67,27 +67,20 @@ export interface VehicleStats {
   totalCost: number;
   /** Percorrenza totale = odometro ultimo − odometro primo */
   totalDistance: number;
-  /** Indice (nella sequenza ordinata) del rifornimento "base" del ciclo corrente */
+  /** Ultimo pieno, riferimento per il prossimo intervallo. */
   cycleBaseIndex: number;
-  /** True se il ciclo corrente è iniziato con un reset "pieno" (non è il primissimo rifornimento) */
-  cycleIsReset: boolean;
-  /** Data del rifornimento base del ciclo corrente */
-  cycleBaseDate: string | null;
-  /** Δdistanza del ciclo corrente */
-  cycleDistance: number;
-  /** Volume consumato nel ciclo corrente (esclusa la base) */
-  cycleVolume: number;
-  /** Spesa sostenuta nel ciclo corrente (esclusa la base) */
-  cycleCost: number;
-  /** Numero di rifornimenti nel ciclo corrente (esclusa la base) */
-  cycleCount: number;
+  measuredDistance: number;
+  measuredVolume: number;
+  measuredCount: number;
+  measuredThrough: string | null;
+  pendingCount: number;
   /** Consumo primario disponibile? (Δd>0 e volume>0) */
   hasConsumption: boolean;
   /** km/l (metrico) oppure mpg (imperiale): Δd / volume consumato */
   primaryConsumption: number | null;
   /** l/100km (solo metrico): volume×100/Δd */
   secondaryConsumption: number | null;
-  /** Costo per unità distanza nel ciclo corrente */
+  /** Costo per unità distanza negli intervalli completati */
   costPerDistance: number | null;
 }
 

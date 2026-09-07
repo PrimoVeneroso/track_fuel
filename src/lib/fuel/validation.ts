@@ -72,7 +72,9 @@ export function validateRefuel(
     return { ok: false, error: "Inserisci una data e un'ora valide." };
   }
   const dateMs = new Date(draft.date).getTime();
-  if (!Number.isFinite(dateMs)) {
+  const date = new Date(dateMs);
+  const [year, month, day] = draft.date.slice(0, 10).split("-").map(Number);
+  if (!Number.isFinite(dateMs) || date.getFullYear() !== year || date.getMonth() + 1 !== month || date.getDate() !== day) {
     return { ok: false, error: "Inserisci una data e un'ora valide." };
   }
   if (dateMs > Date.now() + 60_000) {

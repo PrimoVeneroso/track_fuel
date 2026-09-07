@@ -6,7 +6,10 @@
 
 import type { AppSettings, Refuel, VehiclesData, Vehicle } from "./types";
 import { DATA_KEY, SETTINGS_KEY, SCHEMA_VERSION, emptyVehiclesData, defaultSettings } from "./types";
-import { sanitizeRefuel, sanitizeVehicle, uid } from "./validation";
+import { firstOdometerConflict } from "./calc";
+import { sortRefuels } from "./types";
+import { sanitizeRefuel, sanitizeVehicle, validateRefuel, uid } from "./validation";
+import { triggerFileDownloadOrShare } from "./download";
 
 export function loadVehiclesData(): VehiclesData {
   if (typeof window === "undefined") return emptyVehiclesData();
@@ -122,18 +125,11 @@ export function downloadBackup(data: VehiclesData, settings: AppSettings): boole
   try {
     const backup = buildBackup(data, settings);
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
     const d = new Date();
     const pad = (x: number) => String(x).padStart(2, "0");
     const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-    a.href = url;
-    a.download = `fuellog-backup-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    return true;
+    const filename = `fuellog-backup-${stamp}.json`;
+    return triggerFileDownloadOrShare(blob, filename);
   } catch {
     return false;
   }
@@ -163,6 +159,10 @@ export function parseBackupFile(text: string): ImportResult {
   }
   const obj = parsed as Record<string, unknown>;
 
+  if ((obj.schemaVersion !== undefined && obj.schemaVersion !== SCHEMA_VERSION) ||
+      (obj.app !== undefined && obj.app !== "fuellog")) {
+    return { ok: false, error: "Formato o versione del backup non supportati." };
+  }
   const rawVehiclesData =
     obj.vehicles_data ?? (Array.isArray(obj.vehicles) ? obj : null); // accetta anche export semplificato
   if (rawVehiclesData === null || typeof rawVehiclesData !== "object") {
@@ -176,13 +176,30 @@ export function parseBackupFile(text: string): ImportResult {
   let skipped = 0;
   const vehicles: Vehicle[] = [];
   for (const raw of vd.vehicles) {
+    const candidate = raw as Record<string, unknown> | null;
+    if (!candidate || !Array.isArray(candidate.refuels)) {
+      return { ok: false, error: "Elenco rifornimenti mancante o non valido." };
+    }
+    for (const entry of candidate.refuels) {
+      const r = entry as Record<string, unknown> | null;
+      if (!r || typeof r.full !== "boolean" || typeof r.date !== "string" ||
+          !validateRefuel({ date: r.date, odometer: String(r.odometer), volume: String(r.volume),
+            cost: String(r.cost), full: r.full, notes: typeof r.notes === "string" ? r.notes : "" },
+            [], null, { distance: "km/mi" }).ok) {
+        return { ok: false, error: "Il backup contiene un rifornimento non valido. Nessun dato è stato importato." };
+      }
+    }
     const v = sanitizeVehicle(raw);
     if (v === null) {
       skipped++;
       continue;
     }
-    // rigenera gli id duplicati per evitare collisioni
-    if (vehicles.some((x) => x.id === v.id)) v.id = uid();
+    if (v.refuels.length !== candidate.refuels.length || firstOdometerConflict(sortRefuels(v.refuels)) !== -1) {
+      return { ok: false, error: "Il backup contiene ID duplicati o odometri non coerenti con le date." };
+    }
+    if (vehicles.some((x) => x.id === v.id)) {
+      return { ok: false, error: "Il backup contiene veicoli con ID duplicati." };
+    }
     vehicles.push(v);
   }
   if (vehicles.length === 0) {
@@ -196,6 +213,9 @@ export function parseBackupFile(text: string): ImportResult {
       : vehicles[0].id;
 
   const settingsRaw = obj.app_settings as Record<string, unknown> | undefined;
+  if (settingsRaw && settingsRaw.unitSystem !== "metric" && settingsRaw.unitSystem !== "imperial") {
+    return { ok: false, error: "Unità di misura del backup non riconosciute." };
+  }
   const settings: AppSettings = {
     unitSystem: settingsRaw?.unitSystem === "imperial" ? "imperial" : "metric",
   };
@@ -232,6 +252,11 @@ export function applyImport(
       for (const r of inc.refuels) refuelsById.set(r.id, r);
       result[idx] = { ...local, name: inc.name || local.name, refuels: [...refuelsById.values()] };
       merged++;
+    }
+  }
+  for (const vehicle of result) {
+    if (firstOdometerConflict(sortRefuels(vehicle.refuels)) !== -1) {
+      throw new Error(`Unione annullata: odometri non coerenti per ${vehicle.name}.`);
     }
   }
   const ids = new Set(result.map((v) => v.id));

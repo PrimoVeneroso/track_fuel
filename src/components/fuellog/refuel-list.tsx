@@ -87,9 +87,7 @@ export function RefuelList({ refuels, unit, baseId, editingId, onEdit, onDelete 
             {isBase ? (
               <p className="refuel-base-note">
                 <RotateIcon width={13} height={13} />
-                {sorted.length > 1 && r === sorted[sorted.length - 1]
-                  ? "Base del nuovo ciclo: consumo da ricalcolare ai prossimi rifornimenti"
-                  : "Base del ciclo corrente (esclusa dal consumo)"}
+                Ultimo pieno: riferimento per il prossimo intervallo. La media totale resta conservata.
               </p>
             ) : null}
 

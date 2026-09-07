@@ -5,7 +5,7 @@
  *
  * - Multi-veicolo con registro e statistiche isolati (localStorage)
  * - Unità Metrica (km, L, €) / Imperiale (mi, gal, $) con etichette dinamiche
- * - Motore "media cumulativa corretta" con reset al pieno
+ * - Media totale ponderata tra pieni, con parziali inclusi
  * - Esportazione/Importazione JSON, zero backend, zero telemetria
  */
 
@@ -23,6 +23,10 @@ import {
   parseBackupFile,
 } from "@/lib/fuel/storage";
 import { fmtDateShort, unitLabels } from "@/lib/fuel/format";
+import { downloadHistoryCsv } from "@/lib/fuel/csv";
+import { dataFingerprint, REMINDER_KEY } from "@/lib/fuel/backup-reminder";
+import { BackupReminder } from "@/components/fuellog/backup-reminder";
+import { ConsumptionChart } from "@/components/fuellog/consumption-chart";
 import { Dashboard } from "@/components/fuellog/dashboard";
 import { RefuelForm, type FormValue } from "@/components/fuellog/refuel-form";
 import { RefuelList } from "@/components/fuellog/refuel-list";
@@ -195,7 +199,7 @@ export default function FuelLogApp() {
           ),
         });
         toast.show(
-          value.full ? "Rifornimento registrato: ciclo azzerato." : "Rifornimento registrato.",
+          value.full ? "Pieno registrato: media totale ricalcolata." : "Rifornimento registrato.",
           "success"
         );
       }
@@ -244,10 +248,31 @@ export default function FuelLogApp() {
   /* ---------- Esporta / Importa / Reset ---------- */
   const exportData = useCallback(() => {
     const ok = downloadBackup(data, settings);
+    if (ok) {
+      try {
+        localStorage.setItem(REMINDER_KEY, JSON.stringify({lastBackupAt: Date.now(), snoozedUntil: 0, fingerprint: dataFingerprint(data)}));
+      } catch { /* Le esportazioni funzionano anche se lo storage non è disponibile. */ }
+      window.dispatchEvent(new Event("fuellog:backup"));
+    }
     toast.show(
       ok ? "Backup JSON scaricato." : "Impossibile creare il file di backup.",
       ok ? "success" : "error"
     );
+  }, [data, settings, toast]);
+
+  const copyDataToClipboard = useCallback(async () => {
+    try {
+      const { buildBackup } = await import('@/lib/fuel/storage');
+      const backup = buildBackup(data, settings);
+      await navigator.clipboard.writeText(JSON.stringify(backup, null, 2));
+      try {
+        localStorage.setItem(REMINDER_KEY, JSON.stringify({lastBackupAt: Date.now(), snoozedUntil: 0, fingerprint: dataFingerprint(data)}));
+      } catch { /* ignore */ }
+      window.dispatchEvent(new Event("fuellog:backup"));
+      toast.show("Backup copiato negli appunti!", "success");
+    } catch (e) {
+      toast.show("Errore nella copia degli appunti.", "error");
+    }
   }, [data, settings, toast]);
 
   const importFile = useCallback(
@@ -279,14 +304,25 @@ export default function FuelLogApp() {
     (mode: "overwrite" | "merge") => {
       const payload = importPayload.current;
       if (!payload) return;
-      const { data: resultData, addedVehicles, mergedVehicles } = applyImport(
+      if (mode === "merge" && payload.settings.unitSystem !== settings.unitSystem && data.vehicles.length > 0) {
+        toast.show("Impossibile unire archivi con unità diverse. Usa un backup con le stesse unità oppure sostituisci i dati.", "error");
+        return;
+      }
+      let imported;
+      try {
+        imported = applyImport(
         payload.data,
         data,
         mode
-      );
+        );
+      } catch (error) {
+        toast.show(error instanceof Error ? error.message : "Importazione non riuscita.", "error");
+        return;
+      }
+      const { data: resultData, addedVehicles, mergedVehicles } = imported;
       setEditingRefuel(null);
       setData(resultData);
-      if (mode === "overwrite") setSettings(payload.settings);
+      if (mode === "overwrite" || data.vehicles.length === 0) setSettings(payload.settings);
       importPayload.current = null;
       setImportPreview(null);
       toast.show(
@@ -296,7 +332,7 @@ export default function FuelLogApp() {
         "success"
       );
     },
-    [data, toast]
+    [data, settings.unitSystem, toast]
   );
 
   const resetAll = useCallback(() => {
@@ -399,12 +435,14 @@ export default function FuelLogApp() {
       </header>
 
       <main className="app-main">
+        <BackupReminder data={data} onExport={exportData} />
         <section aria-label="Cruscotto">
           <div className="section-title" style={{ marginBottom: 10 }}>
             <GaugeIcon width={14} height={14} />
             Cruscotto
           </div>
           <Dashboard vehicle={activeVehicle} stats={stats} unit={settings.unitSystem} />
+          {activeVehicle && <div style={{marginTop: 12}}><ConsumptionChart key={activeVehicle.id} refuels={activeVehicle.refuels} unit={settings.unitSystem} /></div>}
           {!activeVehicle ? (
             <button
               type="button"
@@ -472,7 +510,7 @@ export default function FuelLogApp() {
           </button>
           <button type="button" className="footer-btn" onClick={() => setDataOpen(true)}>
             <DatabaseIcon width={14} height={14} />
-            Dati
+            Importa / Esporta
           </button>
           <button type="button" className="footer-btn" onClick={() => setInfoOpen(true)}>
             <InfoIcon width={14} height={14} />
@@ -510,6 +548,10 @@ export default function FuelLogApp() {
         data={data}
         settings={settings}
         onExport={exportData}
+        onExportCsv={() => {
+          const ok = downloadHistoryCsv(data, settings);
+          toast.show(ok ? "Esportazione CSV avviata." : "Impossibile esportare il CSV.", ok ? "success" : "error");
+        }}
         onImportFile={importFile}
         onResetAll={resetAll}
       />
@@ -545,30 +587,16 @@ export default function FuelLogApp() {
       >
         <div className="info-block">
           <h3>Motore di calcolo</h3>
-          <ul>
-            <li>
-              Il <strong>primo rifornimento</strong> fissa distanza e volume iniziali: non è contato
-              nel consumo (serbatoio riempito da vuoto).
-            </li>
-            <li>
-              <strong>Δdistanza</strong> = odometro ultimo − odometro base del ciclo.
-            </li>
-            <li>
-              <strong>Volume consumato</strong> = somma dei volumi successivi alla base.
-            </li>
-            <li>
-              Metrico: <code>km/l = Δd / volume</code> e <code>l/100km = volume × 100 / Δd</code>.
-              Imperiale: <code>mpg = Δd / volume</code>.
-            </li>
-            <li>
-              <strong>Costo per {unitLabels(settings.unitSystem).distance}</strong> = spesa del ciclo
-              / Δdistanza.
-            </li>
-            <li>
-              Un rifornimento con <strong>serbatoio pieno</strong> azzera il ciclo: diventa la nuova
-              base e il suo volume è escluso dal ciclo successivo.
-            </li>
-          </ul>
+          <p>
+            La media totale usa la distanza tra il primo e l’ultimo pieno e tutti i litri
+            aggiunti dopo il primo pieno, incluso quello finale e i parziali intermedi.
+            Si calcola dividendo la distanza totale per i litri totali (km/l o mpg),
+            oppure litri × 100 / distanza (l/100km). Non è una media delle singole medie.
+            Il costo per distanza usa le spese degli stessi rifornimenti.
+            Un nuovo pieno aggiorna la media senza azzerarla. I parziali successivi restano
+            in attesa del prossimo pieno; prima di due pieni la media non è disponibile.
+            Spesa e percorrenza totali comprendono invece tutto lo storico.
+          </p>
         </div>
         <div className="info-block">
           <h3>Unità di misura</h3>
