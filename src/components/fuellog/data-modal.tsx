@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Modale "Dati": esportazione/importazione JSON, reset totale,
- * informazioni sul motore di calcolo e sulla privacy.
+ * Modale "Dati": esportazione JSON/CSV/TSV, importazione JSON/CSV/TSV,
+ * reset totale, informazioni sul motore di calcolo e sulla privacy.
  */
 
 import { useRef, useState } from "react";
@@ -19,16 +19,35 @@ interface DataModalProps {
   settings: AppSettings;
   onExport: () => void;
   onExportCsv: () => void;
+  onExportTsv: () => void;
   onCopyJSON: () => void;
   onImportFile: (file: File) => void;
   onResetAll: () => void;
+  /** messaggi di errore coerenti con il resto dell'app (toast) */
+  onError: (message: string) => void;
 }
 
-export function DataModal({ open, onClose, data, settings, onExport, onExportCsv, onCopyJSON, onImportFile, onResetAll }: DataModalProps) {
+export function DataModal({ open, onClose, data, settings, onExport, onExportCsv, onExportTsv, onCopyJSON, onImportFile, onResetAll, onError }: DataModalProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [confirmReset, setConfirmReset] = useState(false);
 
   const totalRefuels = data.vehicles.reduce((s, v) => s + v.refuels.length, 0);
+
+  const pasteJson = async () => {
+    let text: string;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      onError("Impossibile leggere dagli appunti. Usa il caricamento da file.");
+      return;
+    }
+    if (!text.trim()) {
+      onError("Gli appunti sono vuoti: copia prima il backup JSON.");
+      return;
+    }
+    const file = new File([text], "appunti-backup.json", { type: "application/json" });
+    onImportFile(file);
+  };
 
   return (
     <Modal
@@ -84,11 +103,22 @@ export function DataModal({ open, onClose, data, settings, onExport, onExportCsv
                 📋 Copia JSON
               </button>
             </div>
-            <button type="button" className="btn btn-secondary btn-block" style={{marginTop: 10}} onClick={onExportCsv} disabled={totalRefuels === 0}>
-              <DownloadIcon width={18} height={18} />
-              Esporta storico CSV (Excel)
-            </button>
-            <p style={{marginTop: 10}}>Il CSV contiene tutti i rifornimenti ed è adatto a Excel e LibreOffice. Per ripristinare l’app usa il backup JSON. Entrambi si creano offline.</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: 10 }}>
+              <button type="button" className="btn btn-secondary" style={{ flex: 1, minWidth: '200px' }} onClick={onExportCsv} disabled={totalRefuels === 0}>
+                <DownloadIcon width={18} height={18} />
+                Esporta storico CSV (Excel)
+              </button>
+              <button type="button" className="btn btn-secondary" style={{ flex: 1, minWidth: '200px' }} onClick={onExportTsv} disabled={totalRefuels === 0}>
+                <DownloadIcon width={18} height={18} />
+                Esporta storico TSV
+              </button>
+            </div>
+            <p style={{marginTop: 10}}>
+              CSV/TSV contengono tutti i rifornimenti (con prezzo per unità) e si aprono in Excel,
+              LibreOffice o in altri programmi. Per ripristinare l&apos;app usa il backup JSON.
+              Il CSV usa separatori e decimali italiani per Excel; il TSV usa tab e decimali con
+              punto per l&apos;uso tecnico. Entrambi si creano offline.
+            </p>
           </div>
 
           <div className="info-block">
@@ -97,16 +127,18 @@ export function DataModal({ open, onClose, data, settings, onExport, onExportCsv
               Importazione
             </h3>
             <p>
-              Carica o incolla un JSON di backup <code>fuellog-backup-*.json</code>: potrai scegliere se
-              <strong> sovrascrivere</strong> i dati locali o <strong>unirli</strong> (i veicoli con
-              lo stesso id vengono fusi).
+              Carica un backup JSON (<code>fuellog-backup-*.json</code>) oppure un file
+              <strong> CSV/TSV</strong> (esportato da questo programma o creato in Excel) con le
+              colonne <em>Veicolo, Data e ora, Odometro, Volume, Spesa</em> (facoltative:
+              Serbatoio pieno, Note, ID). Potrai scegliere se <strong>sovrascrivere</strong> i dati
+              locali o <strong>unirli</strong>.
             </p>
             <input
               ref={fileRef}
               type="file"
-              accept="application/json,.json"
+              accept=".json,.csv,.tsv,application/json,text/csv,text/tab-separated-values,.txt"
               className="sr-only"
-              aria-label="File di backup JSON da importare"
+              aria-label="File da importare (JSON, CSV o TSV)"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) onImportFile(file);
@@ -121,29 +153,22 @@ export function DataModal({ open, onClose, data, settings, onExport, onExportCsv
                 onClick={() => fileRef.current?.click()}
               >
                 <UploadIcon width={18} height={18} />
-                Importa da file JSON
+                Importa file JSON, CSV o TSV
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
                 style={{ flex: 1, minWidth: '200px' }}
-                onClick={async () => {
-                  try {
-                    const text = await navigator.clipboard.readText();
-                    if (!text || !text.includes('vehicles')) {
-                      alert('Gli appunti non sembrano contenere un backup JSON valido.');
-                      return;
-                    }
-                    const file = new File([text], 'appunti-backup.json', { type: 'application/json' });
-                    onImportFile(file);
-                  } catch (e) {
-                    alert('Impossibile leggere dagli appunti. Prova a usare il caricamento da file.');
-                  }
-                }}
+                onClick={pasteJson}
               >
                 📋 Incolla JSON
               </button>
             </div>
+            <p style={{marginTop: 10}}>
+              Nei file CSV/TSV i valori sono interpretati con le unità attualmente attive
+              ({settings.unitSystem === "metric" ? "metriche" : "imperiali"}): il file non contiene
+              informazioni sulle unità.
+            </p>
           </div>
 
           <div className="info-block">

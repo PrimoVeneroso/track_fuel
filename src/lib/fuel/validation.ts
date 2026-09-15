@@ -18,9 +18,15 @@ export const MAX_COST = 1_000_000;
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-/** Accetta sia "1234,5" che "1234.5" (tastiera italiana). */
+/** Accetta sia "1234,5" che "1234.5" (tastiera italiana) e i separatori
+ *  delle migliaia: "1.234,56" oppure "1,234.56". */
 export function parseDecimal(raw: string): number | null {
-  const cleaned = raw.trim().replace(/\s+/g, "").replace(",", ".");
+  const t = (raw ?? "").trim();
+  if (!t) return null;
+  let cleaned: string;
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) cleaned = t.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) cleaned = t.replace(/,/g, "");
+  else cleaned = t.replace(",", ".");
   if (cleaned === "" || !/^\d*\.?\d*$/.test(cleaned)) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
