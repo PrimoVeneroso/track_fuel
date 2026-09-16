@@ -73,7 +73,12 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
 
   const parseNum = (s: string) => {
     if (!s) return NaN;
-    return parseFloat(s.replace(',', '.'));
+    const t = s.trim();
+    if (!t) return NaN;
+    // anche con separatori delle migliaia: "1.234,56" oppure "1,234.56"
+    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) return parseFloat(t.replace(/\./g, '').replace(',', '.'));
+    if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return parseFloat(t.replace(/,/g, ''));
+    return parseFloat(t.replace(',', '.'));
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,10 +119,13 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
     const c = parseNum(draft.cost);
     const v = parseNum(draft.volume);
 
-    if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
-      set("volume", (c / p).toFixed(2).replace('.', ','));
-    } else if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
+    // Il volume è la misura fisica registrata: cambiando il prezzo si
+    // aggiorna la spesa (v × p), mai il volume. Solo senza volume valido
+    // deriviamo i litri dalla spesa già inserita.
+    if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
       set("cost", (v * p).toFixed(2).replace('.', ','));
+    } else if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
+      set("volume", (c / p).toFixed(2).replace('.', ','));
     }
   };
 

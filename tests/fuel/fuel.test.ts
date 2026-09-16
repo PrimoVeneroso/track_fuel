@@ -77,7 +77,7 @@ describe('Funzioni offline', () => {
     const exported = data([{...rows[0], volume: 12.5, notes: '=SUM(A1)\n"nota";ciao'}]);
     const csv = buildHistoryCsv(exported, {unitSystem: 'metric'});
     expect(csv.startsWith('\uFEFF')).toBe(true);
-    expect(csv).toContain('"12,5"');
+    expect(csv).toContain('"12,50"');
     expect(csv).toContain('"\'=SUM(A1)\n""nota"";ciao"');
     expect(csv).toContain('Volume (L)');
     expect(buildHistoryCsv(data(), {unitSystem: 'imperial'})).toContain('Volume (gal)');

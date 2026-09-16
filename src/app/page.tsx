@@ -12,7 +12,7 @@
 import { Capacitor } from "@capacitor/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppSettings, Refuel, VehiclesData, Vehicle } from "@/lib/fuel/types";
-import { emptyVehiclesData, sortRefuels } from "@/lib/fuel/types";
+import { defaultSettings, emptyVehiclesData, SCHEMA_VERSION, sortRefuels } from "@/lib/fuel/types";
 import { computeStats } from "@/lib/fuel/calc";
 import { setDataStore, setSettingsStore, useFuelStore } from "@/lib/fuel/store";
 import { purgeLegacyLocalStorage } from "@/lib/fuel/persistence";
@@ -24,7 +24,7 @@ import {
   parseBackupFile,
 } from "@/lib/fuel/storage";
 import { fmtDateShort, unitLabels } from "@/lib/fuel/format";
-import { downloadHistoryCsv } from "@/lib/fuel/csv";
+import { applyCsvImport, downloadHistoryCsv, downloadHistoryTsv, parseCsvImport } from "@/lib/fuel/csv";
 import { dataFingerprint, REMINDER_KEY } from "@/lib/fuel/backup-reminder";
 import { BackupReminder } from "@/components/fuellog/backup-reminder";
 import { ConsumptionChart } from "@/components/fuellog/consumption-chart";
@@ -67,7 +67,7 @@ export default function FuelLogApp() {
 
   const [editingRefuel, setEditingRefuel] = useState<Refuel | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
-  const importPayload = useRef<{ data: VehiclesData; settings: AppSettings } | null>(null);
+  const importPayload = useRef<{ data: VehiclesData; settings: AppSettings; source: "json" | "csv" } | null>(null);
 
   const toast = useToasts();
   const formRef = useRef<HTMLDivElement>(null);
@@ -287,44 +287,81 @@ export default function FuelLogApp() {
 
   const importFile = useCallback(
     async (file: File) => {
+      let text: string;
       try {
-        const text = await file.text();
+        text = await file.text();
+      } catch {
+        toast.show("Errore durante la lettura del file.", "error");
+        return;
+      }
+      const trimmed = text.trimStart();
+
+      // JSON di backup (file .json o contenuto che inizia con {)
+      if (trimmed.startsWith("{")) {
         const result = parseBackupFile(text);
         if (!result.ok || !result.data || !result.settings) {
           toast.show(result.error ?? "File non valido.", "error");
           return;
         }
-        importPayload.current = { data: result.data, settings: result.settings };
+        importPayload.current = { data: result.data, settings: result.settings, source: "json" };
         setImportPreview({
           fileName: file.name,
           vehicles: result.report?.vehicles ?? result.data.vehicles.length,
           refuels: result.report?.refuels ?? 0,
           skipped: result.report?.skipped ?? 0,
           unitSystem: result.settings.unitSystem,
+          source: "json",
+          currentUnit: settings.unitSystem,
         });
         setDataOpen(false);
-      } catch {
-        toast.show("Errore durante la lettura del file.", "error");
+        return;
       }
+
+      // CSV / TSV (separatore ; , tab o |; header in italiano o inglese)
+      const result = parseCsvImport(text);
+      if (!result.ok || !result.vehicles || !result.report) {
+        if (result.errors && result.errors.length > 0) {
+          const others = result.errors.length - 1;
+          toast.show(`File non importato (${result.errors.length} problemi): ${result.errors[0]}${others > 0 ? ` …e altre ${others} righe` : ""}`, "error");
+        } else {
+          toast.show(result.error ?? "File CSV/TSV non valido.", "error");
+        }
+        return;
+      }
+      importPayload.current = {
+        data: { version: SCHEMA_VERSION, activeVehicleId: null, vehicles: result.vehicles },
+        settings: defaultSettings(),
+        source: "csv",
+      };
+      setImportPreview({
+        fileName: file.name,
+        vehicles: result.report.vehicles,
+        refuels: result.report.refuels,
+        skipped: 0,
+        unitSystem: settings.unitSystem,
+        source: "csv",
+        delimiter: result.report.delimiter,
+        currentUnit: settings.unitSystem,
+      });
+      setDataOpen(false);
     },
-    [toast]
+    [settings.unitSystem, toast]
   );
 
   const applyImportMode = useCallback(
     (mode: "overwrite" | "merge") => {
       const payload = importPayload.current;
       if (!payload) return;
-      if (mode === "merge" && payload.settings.unitSystem !== settings.unitSystem && data.vehicles.length > 0) {
+      const isCsv = payload.source === "csv";
+      if (!isCsv && mode === "merge" && payload.settings.unitSystem !== settings.unitSystem && data.vehicles.length > 0) {
         toast.show("Impossibile unire archivi con unità diverse. Usa un backup con le stesse unità oppure sostituisci i dati.", "error");
         return;
       }
       let imported;
       try {
-        imported = applyImport(
-        payload.data,
-        data,
-        mode
-        );
+        imported = isCsv
+          ? applyCsvImport(payload.data, data, mode)
+          : applyImport(payload.data, data, mode);
       } catch (error) {
         toast.show(error instanceof Error ? error.message : "Importazione non riuscita.", "error");
         return;
@@ -332,13 +369,16 @@ export default function FuelLogApp() {
       const { data: resultData, addedVehicles, mergedVehicles } = imported;
       setEditingRefuel(null);
       setData(resultData);
-      if (mode === "overwrite" || data.vehicles.length === 0) setSettings(payload.settings);
+      // Il backup JSON porta le proprie unità; il CSV no (usa quelle attive).
+      if (!isCsv && (mode === "overwrite" || data.vehicles.length === 0)) setSettings(payload.settings);
       importPayload.current = null;
       setImportPreview(null);
       toast.show(
         mode === "overwrite"
-          ? `Dati sostituiti: ${resultData.vehicles.length} veicoli importati.`
-          : `Unione completata: ${addedVehicles} nuovi veicoli, ${mergedVehicles} fusi.`,
+          ? `Dati sostituiti: ${resultData.vehicles.length} veicoli importati${isCsv ? " dal file" : ""}.`
+          : isCsv
+            ? `File unito: ${addedVehicles} nuovi veicoli, ${mergedVehicles} aggiornati.`
+            : `Unione completata: ${addedVehicles} nuovi veicoli, ${mergedVehicles} fusi.`,
         "success"
       );
     },
@@ -349,7 +389,11 @@ export default function FuelLogApp() {
     setEditingRefuel(null);
     setData(emptyVehiclesData());
     // Rimuove anche le chiavi localStorage legacy (snapshot pre-migrazione)
+    // e il promemoria backup, perché riferito ai dati appena cancellati.
     purgeLegacyLocalStorage();
+    try {
+      localStorage.removeItem(REMINDER_KEY);
+    } catch { /* storage non disponibile */ }
     toast.show("Tutti i dati sono stati cancellati.", "success");
   }, [toast]);
 
@@ -565,8 +609,15 @@ export default function FuelLogApp() {
           const ok = result === "saved" || result === "started";
           toast.show(ok ? (result === "saved" ? "CSV salvato." : "Esportazione CSV avviata.") : "Impossibile esportare il CSV.", ok ? "success" : "error");
         }}
+        onExportTsv={async () => {
+          const result = await downloadHistoryTsv(data, settings);
+          if (result === "cancelled") return;
+          const ok = result === "saved" || result === "started";
+          toast.show(ok ? (result === "saved" ? "TSV salvato." : "Esportazione TSV avviata.") : "Impossibile esportare il TSV.", ok ? "success" : "error");
+        }}
         onImportFile={importFile}
         onResetAll={resetAll}
+        onError={(message) => toast.show(message, "error")}
       />
 
       {/* ---- Modale anteprima import ---- */}

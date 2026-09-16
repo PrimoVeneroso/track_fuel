@@ -7,6 +7,7 @@
  */
 
 import type { UnitSystem, Vehicle, VehicleStats } from "@/lib/fuel/types";
+import { sortRefuels } from "@/lib/fuel/types";
 import { fmt, fmtDateShort, unitLabels } from "@/lib/fuel/format";
 import { CoinsIcon, GaugeIcon, RotateIcon, RouteIcon, WalletIcon } from "./icons";
 
@@ -44,9 +45,7 @@ export function Dashboard({ vehicle, stats, unit }: DashboardProps) {
     );
   }
 
-  const lastRefuel = [...vehicle.refuels].sort((a, b) =>
-    a.date === b.date ? (a.createdAt < b.createdAt ? -1 : 1) : a.date < b.date ? -1 : 1
-  )[stats.count - 1];
+  const lastRefuel = sortRefuels(vehicle.refuels)[stats.count - 1];
 
   return (
     <section aria-label="Cruscotto statistiche" style={{ display: "flex", flexDirection: "column", gap: 10 }}>

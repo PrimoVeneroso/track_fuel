@@ -11,11 +11,17 @@ L'app non richiede alcuna registrazione, non possiede un backend, e memorizza tu
   - Costo per chilometro o miglio
   - Spesa e percorrenza totali
 - 🧮 **Modulo di inserimento avanzato**: Inserendo due valori tra litri, prezzo al litro o spesa totale, l'app calcola automaticamente il terzo.
+- 📁 **Import/Export completo**:
+  - Backup JSON completo (con anteprima e scelta tra "sovrascrivi" e "unisci") per il ripristino esatto dell'app
+  - Storico esportabile in **CSV** (formato Excel italiano: separatore `;`, decimali con virgola, BOM) o **TSV** (tab, decimali con punto) con colonna prezzo per unità
+  - **Import da CSV/TSV** (creati in Excel/LibreOffice o esportati dall'app): separatore automatico (`;`, `,`, tab, `|`), intestazioni in italiano o inglese, numeri con virgola o punto e migliaia, errori riportati riga per riga; l'unione avviene per nome veicolo
+- 📈 **Grafico dei consumi**: media totale cumulativa e consumo dei singoli intervalli, aggiornato a ogni rifornimento
 - 📱 **100% Offline e Nativa**: Grazie a [Capacitor](https://capacitorjs.com/), l'app è compilata come un vero APK nativo per Android.
 
 ## 🛠 Tecnologie Utilizzate
 - **Framework**: [Next.js](https://nextjs.org/) (Configurato per esportazione puramente statica)
-- **UI & Stili**: [Tailwind CSS](https://tailwindcss.com/) + Componenti [Shadcn UI](https://ui.shadcn.com/)
+- **UI & Stili**: CSS puro mobile-first (tema dark), componenti custom senza librerie
+- **Archiviazione**: IndexedDB locale (con migrazione automatica da localStorage e fallback)
 - **Mobile**: Capacitor (Generazione automatica dell'APK)
 - **CI/CD**: GitHub Actions
 
