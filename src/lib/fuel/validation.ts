@@ -23,12 +23,31 @@ export type ValidationResult = { ok: true } | { ok: false; error: string };
 export function parseDecimal(raw: string): number | null {
   const t = (raw ?? "").trim();
   if (!t) return null;
-  let cleaned: string;
-  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) cleaned = t.replace(/\./g, "").replace(",", ".");
-  else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) cleaned = t.replace(/,/g, "");
-  else cleaned = t.replace(",", ".");
-  if (cleaned === "" || !/^\d*\.?\d*$/.test(cleaned)) return null;
-  const n = Number(cleaned);
+  let s = t.replace(/\s+/g, "");
+
+  if (s.includes(",") && s.includes(".")) {
+    if (s.lastIndexOf(".") > s.lastIndexOf(",")) {
+      s = s.replace(/,/g, ""); // 1,000.50
+    } else {
+      s = s.replace(/\./g, "").replace(",", "."); // 1.000,50
+    }
+  } else if (s.includes(",")) {
+    if ((s.match(/,/g) || []).length > 1) {
+      s = s.replace(/,/g, ""); // 1,000,000
+    } else {
+      s = s.replace(",", "."); // 10,50
+    }
+  } else if (s.includes(".")) {
+    if ((s.match(/\./g) || []).length > 1) {
+      s = s.replace(/\./g, ""); // 1.000.000
+    }
+    // Se c'è un solo punto, assumiamo sia decimale (10.157).
+    // Se l'utente voleva scrivere 10mila come 10.000, diventerà 10. 
+    // Questa è l'unica via sicura per evitare che 10.157 (volume) diventi 10mila.
+  }
+
+  if (s === "" || !/^-?\d*\.?\d*$/.test(s)) return null;
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 

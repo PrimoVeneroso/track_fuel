@@ -287,11 +287,27 @@ function stripFormulaPrefix(raw: string): string {
 export function parseDecimalFlexible(raw: string): number | null {
   const t = (raw ?? '').trim();
   if (!t) return null;
-  let s = t;
-  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
-  else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
-  else s = s.replace(',', '.');
-  if (s === '' || !/^\d*\.?\d*$/.test(s)) return null;
+  let s = t.replace(/\s+/g, '');
+
+  if (s.includes(',') && s.includes('.')) {
+    if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
+      s = s.replace(/,/g, '');
+    } else {
+      s = s.replace(/\./g, '').replace(',', '.');
+    }
+  } else if (s.includes(',')) {
+    if ((s.match(/,/g) || []).length > 1) {
+      s = s.replace(/,/g, '');
+    } else {
+      s = s.replace(',', '.');
+    }
+  } else if (s.includes('.')) {
+    if ((s.match(/\./g) || []).length > 1) {
+      s = s.replace(/\./g, '');
+    }
+  }
+
+  if (s === '' || !/^-?\d*\.?\d*$/.test(s)) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
