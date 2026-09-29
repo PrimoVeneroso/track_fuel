@@ -18,11 +18,40 @@ export const MAX_COST = 1_000_000;
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
 
-/** Accetta sia "1234,5" che "1234.5" (tastiera italiana). */
+/**
+ * Normalizza un numero "grezzo" in formato JS ("1234.56"), gestendo
+ * virgola/punto decimale e separatori delle migliaia:
+ *   "12,5" → "12.5" · "1,000.50" → "1000.5" · "1.234,56" → "1234.56"
+ *   "1,000,000" → "1000000" · "1.000.000" → "1000000" · "10.157" → "10.157"
+ * Ambiguità con un solo separatore ("10.157"): è decimale — è la scelta
+ * sicura per prezzi (1.859) e volumi; "10.000" verrà letto come 10.
+ * Unica fonte di verità per form, validazione e import CSV/TSV.
+ */
+export function normalizeDecimal(raw: string): string | null {
+  const s = (raw ?? "").trim().replace(/\s+/g, "");
+  if (!s) return null;
+  let t = s;
+  if (t.includes(",") && t.includes(".")) {
+    // entrambi presenti: l'ultimo è il separatore decimale
+    if (t.lastIndexOf(".") > t.lastIndexOf(",")) t = t.replace(/,/g, ""); // 1,000.50
+    else t = t.replace(/\./g, "").replace(",", "."); // 1.000,50
+  } else if (t.includes(",")) {
+    // solo virgole: più di una → migliaia, una sola → decimale
+    t = (t.match(/,/g) || []).length > 1 ? t.replace(/,/g, "") : t.replace(",", ".");
+  } else if (t.includes(".")) {
+    // solo punti: più di uno → migliaia, uno solo → decimale
+    if ((t.match(/\./g) || []).length > 1) t = t.replace(/\./g, "");
+  }
+  if (t === "" || !/^-?\d*\.?\d*$/.test(t)) return null;
+  return t;
+}
+
+/** Accetta sia "1234,5" che "1234.5" (tastiera italiana) e i separatori
+ *  delle migliaia: "1.234,56", "1,234.56", "1,000,000". */
 export function parseDecimal(raw: string): number | null {
-  const cleaned = raw.trim().replace(/\s+/g, "").replace(",", ".");
-  if (cleaned === "" || !/^\d*\.?\d*$/.test(cleaned)) return null;
-  const n = Number(cleaned);
+  const normalized = normalizeDecimal(raw);
+  if (normalized === null) return null;
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
 }
 

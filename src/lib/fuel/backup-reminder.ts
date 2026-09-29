@@ -23,6 +23,7 @@ export function backupReminderDue(state: BackupReminderState, fingerprint: strin
 
 export function loadBackupReminder(): BackupReminderState {
   const empty = {lastBackupAt: 0, snoozedUntil: 0, fingerprint: ''};
+  if (typeof window === 'undefined') return empty; // SSR: nessun accesso allo storage
   try {
     const raw = JSON.parse(localStorage.getItem(REMINDER_KEY) ?? 'null');
     if (!raw || !Number.isFinite(raw.lastBackupAt) || !Number.isFinite(raw.snoozedUntil) || typeof raw.fingerprint !== 'string') return empty;

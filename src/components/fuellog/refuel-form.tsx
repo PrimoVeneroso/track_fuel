@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { Refuel, UnitSystem, Vehicle } from "@/lib/fuel/types";
 import { sortRefuels } from "@/lib/fuel/types";
 import { fmt, nowDatetimeLocalValue, unitLabels } from "@/lib/fuel/format";
-import { MAX_NOTES_LENGTH, validateRefuel, type RefuelDraft } from "@/lib/fuel/validation";
+import { MAX_NOTES_LENGTH, parseDecimal, validateRefuel, type RefuelDraft } from "@/lib/fuel/validation";
 import { AlertIcon, CheckIcon, FuelIcon, PencilIcon, XIcon } from "./icons";
 
 export interface FormValue {
@@ -71,10 +71,8 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
     editing && editing.volume > 0 ? (editing.cost / editing.volume).toFixed(3).replace('.', ',') : ""
   );
 
-  const parseNum = (s: string) => {
-    if (!s) return NaN;
-    return parseFloat(s.replace(',', '.'));
-  };
+  // Stessa semantica della validazione al submit (fonte unica in validation.ts)
+  const parseNum = (s: string) => parseDecimal(s) ?? NaN;
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -114,10 +112,13 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
     const c = parseNum(draft.cost);
     const v = parseNum(draft.volume);
 
-    if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
-      set("volume", (c / p).toFixed(2).replace('.', ','));
-    } else if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
+    // Il volume è la misura fisica registrata: cambiando il prezzo si
+    // aggiorna la spesa (v × p), mai il volume. Solo senza volume valido
+    // deriviamo i litri dalla spesa già inserita.
+    if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
       set("cost", (v * p).toFixed(2).replace('.', ','));
+    } else if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
+      set("volume", (c / p).toFixed(2).replace('.', ','));
     }
   };
 
