@@ -6,11 +6,12 @@
  * in base all'unità di misura, validazione con messaggi inline.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Refuel, UnitSystem, Vehicle } from "@/lib/fuel/types";
 import { sortRefuels } from "@/lib/fuel/types";
 import { fmt, nowDatetimeLocalValue, unitLabels } from "@/lib/fuel/format";
 import { MAX_NOTES_LENGTH, parseDecimal, validateRefuel, type RefuelDraft } from "@/lib/fuel/validation";
+import { chooseAnchorAndDerived, deriveValue, type NumField } from "@/lib/fuel/recalc";
 import { AlertIcon, CheckIcon, FuelIcon, PencilIcon, XIcon } from "./icons";
 
 export interface FormValue {
@@ -74,52 +75,81 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
   // Stessa semantica della validazione al submit (fonte unica in validation.ts)
   const parseNum = (s: string) => parseDecimal(s) ?? NaN;
 
+  /* ------------------------------------------------------------------ */
+  /* Ricalcolo dinamico — opzione A "Smart Dependency".                 */
+  /* I tre campi sono vincolati da  spesa = litri × prezzo.             */
+  /* Quando l'utente modifica un campo, ricalcoliamo SOLO il terzo      */
+  /* campo, usando come riferimento (ancora) l'altro campo che          */
+  /* l'utente ha toccato per ultimo. Il campo in corso di modifica e    */
+  /* l'ancora non vengono MAI sovrascritti: correggere un valore        */
+  /* digitato male non produce più conflitti di sovrascrittura.        */
+  /* ------------------------------------------------------------------ */
+  const touchOrder = useRef<Record<NumField, number>>({ volume: 0, cost: 0, price: 0 });
+  const touchTick = useRef(0);
+
+  const markTouched = (f: NumField) => {
+    touchTick.current += 1;
+    touchOrder.current[f] = touchTick.current;
+  };
+
+  const resetTouch = () => {
+    touchTick.current = 0;
+    touchOrder.current = { volume: 0, cost: 0, price: 0 };
+  };
+
+  const fieldValue = (f: NumField): string =>
+    f === "price" ? price : f === "volume" ? draft.volume : draft.cost;
+
+  const setFieldValue = (f: NumField, s: string) => {
+    if (f === "price") setPrice(s);
+    else if (f === "volume") set("volume", s);
+    else set("cost", s);
+  };
+
+  const fmtNum = (n: number, digits: number) => n.toFixed(digits).replace(".", ",");
+
+  const recalc = (edited: NumField, editedValue: number) => {
+    const isValid = (f: NumField) => {
+      const n = parseNum(fieldValue(f));
+      return Number.isFinite(n) && n > 0;
+    };
+    const { anchor, derived } = chooseAnchorAndDerived(edited, touchOrder.current, isValid);
+    // Valori correnti: il campo modificato usa il valore appena digitato
+    // (lo stato React si aggiorna in modo asincrono, quindi draft/price
+    // nella chiusura non lo rifletterebbero ancora).
+    const val = (f: NumField) => (f === edited ? editedValue : parseNum(fieldValue(f)));
+    const res = deriveValue(derived, {
+      volume: val("volume"),
+      cost: val("cost"),
+      price: val("price"),
+    });
+    if (!res) return;
+    // Non riscrivere se il campo derivato è già coerente: evita ritocchi
+    // e riformattazioni inutili (es. "50" → "50,00") a ogni tasto.
+    const cur = parseNum(fieldValue(derived));
+    if (cur !== null && Math.abs(cur - res.value) < 1e-9) return;
+    setFieldValue(derived, fmtNum(res.value, res.digits));
+  };
+
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     set("volume", val);
-    const v = parseNum(val);
-    const c = parseNum(draft.cost);
-    const p = parseNum(price);
-    
-    if (!isNaN(v) && v > 0 && !isNaN(c) && c > 0) {
-      setPrice((c / v).toFixed(3).replace('.', ','));
-    } else if (!isNaN(v) && v > 0 && !isNaN(p) && p > 0) {
-      set("cost", (v * p).toFixed(2).replace('.', ','));
-    }
+    markTouched("volume");
+    recalc("volume", parseNum(val));
   };
 
   const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     set("cost", val);
-    const c = parseNum(val);
-    const v = parseNum(draft.volume);
-    const p = parseNum(price);
-    
-    if (!isNaN(c) && c > 0 && !isNaN(p) && p > 0 && isNaN(v)) {
-      set("volume", (c / p).toFixed(2).replace('.', ','));
-    } else if (!isNaN(c) && c > 0 && !isNaN(v) && v > 0) {
-      setPrice((c / v).toFixed(3).replace('.', ','));
-    } else if (!isNaN(c) && c > 0 && !isNaN(p) && p > 0) {
-      // Se abbiamo tutti e tre, l'utente sta aggiornando la spesa, ricalcoliamo i litri per coerenza
-      set("volume", (c / p).toFixed(2).replace('.', ','));
-    }
+    markTouched("cost");
+    recalc("cost", parseNum(val));
   };
 
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setPrice(val);
-    const p = parseNum(val);
-    const c = parseNum(draft.cost);
-    const v = parseNum(draft.volume);
-
-    // Il volume è la misura fisica registrata: cambiando il prezzo si
-    // aggiorna la spesa (v × p), mai il volume. Solo senza volume valido
-    // deriviamo i litri dalla spesa già inserita.
-    if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
-      set("cost", (v * p).toFixed(2).replace('.', ','));
-    } else if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
-      set("volume", (c / p).toFixed(2).replace('.', ','));
-    }
+    markTouched("price");
+    recalc("price", parseNum(val));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -148,6 +178,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
       setDraft(emptyDraft());
       setPrice("");
       setError(null);
+      resetTouch();
     }
   };
 

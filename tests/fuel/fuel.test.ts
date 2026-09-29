@@ -5,6 +5,7 @@ import { consumptionHistory } from '../../src/lib/fuel/history';
 import { backupReminderDue, dataFingerprint, DAY } from '../../src/lib/fuel/backup-reminder';
 import { computeStats } from '../../src/lib/fuel/calc';
 import { applyImport, buildBackup, parseBackupFile } from '../../src/lib/fuel/storage';
+import { sanitizeRefuel } from '../../src/lib/fuel/validation';
 import type { Refuel, VehiclesData } from '../../src/lib/fuel/types';
 const r = (day: number, odometer: number, volume: number, full = false): Refuel => ({
   id: String(day), date: `2025-01-${String(day).padStart(2, '0')}T12:00`,
@@ -100,5 +101,22 @@ describe('Funzioni offline', () => {
     expect(backupReminderDue({...state, snoozedUntil: 45 * DAY}, 'modified', 40 * DAY)).toBe(false);
     expect(backupReminderDue({lastBackupAt: 0, snoozedUntil: 0, fingerprint: ''}, fingerprint, DAY)).toBe(true);
     expect(dataFingerprint({...data(), activeVehicleId: null})).toBe(fingerprint);
+  });
+});
+
+describe('Sanitize decimali (import JSON)', () => {
+  const base = { id: 'x', date: '2025-01-02T12:00', full: false, notes: '', createdAt: '2025-01-01T12:00:00.000Z' };
+  test('stringhe con virgola/punto normalizzate come form e CSV', () => {
+    const a = sanitizeRefuel({ ...base, odometer: 1000, volume: '12,5', cost: '25.00' });
+    expect(a).toMatchObject({ volume: 12.5, cost: 25 });
+    expect(sanitizeRefuel({ ...base, odometer: 1000, volume: '1.234,56', cost: '0' })!.volume).toBe(1234.56);
+    expect(sanitizeRefuel({ ...base, odometer: '1,234.56', volume: '10', cost: '0' })!.odometer).toBe(1234.56);
+    expect(sanitizeRefuel({ ...base, odometer: '1,000,000', volume: '10', cost: '0' })!.odometer).toBe(1000000);
+    expect(sanitizeRefuel({ ...base, odometer: 1000, volume: '10.157', cost: '0' })!.volume).toBe(10.157);
+  });
+  test('stringhe non numeriche o campi essenziali mancanti → fallback/rifiuto', () => {
+    expect(sanitizeRefuel({ ...base, odometer: 1000 })).toBeNull(); // volume mancante → rifiuto
+    expect(sanitizeRefuel({ ...base, odometer: 'n/a', volume: 10 })).toBeNull(); // odometro non valido → rifiuto
+    expect(sanitizeRefuel({ ...base, odometer: 1000, volume: 10, cost: 'abc' })!.cost).toBe(0); // cost non valido → 0
   });
 });

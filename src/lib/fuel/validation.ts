@@ -192,8 +192,10 @@ const uid = (): string => {
 };
 
 function toFiniteNumber(v: unknown, min: number, max: number, fallback: number): number {
-  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v.replace(",", ".")) : NaN;
-  if (!Number.isFinite(n)) return fallback;
+  // Stringhe: stessa normalizzazione virgola/punto del form e del CSV
+  // (normalizeDecimal), così "1.234,56" e "1,234.56" non producono NaN.
+  const n = typeof v === "number" ? v : typeof v === "string" ? parseDecimal(v) : null;
+  if (n === null || !Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 }
 
