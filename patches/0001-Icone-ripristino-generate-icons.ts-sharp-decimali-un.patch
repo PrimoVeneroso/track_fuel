@@ -1,0 +1,514 @@
+From 832cb76739c30a8ba5af3da1811b659cdd97634d Mon Sep 17 00:00:00 2001
+From: PrimoVeneroso <235916146+PrimoVeneroso@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 07:56:17 +0000
+Subject: [PATCH] Icone: ripristino generate-icons.ts + sharp; decimali
+ unificati; ricalcolo Smart Dependency
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+1) Icona allineata a main: ripristinato scripts/generate-icons.ts e la
+   dipendenza sharp (asset PNG/logo/manifest/layout già intatti).
+2) Decimali: toFiniteNumber (sanitize import JSON) ora delega a
+   parseDecimal/normalizeDecimal invece di Number(v.replace(",", ".")),
+   così "1.234,56"/"1,234.56" non producono più NaN. Test aggiunti.
+3) Ricalcolo dinamico — opzione A "Smart Dependency": logica pura in
+   src/lib/fuel/recalc.ts (chooseAnchorAndDerived + deriveValue). Al
+   change di un campo si ricalcola SOLO il terzo, usando come ancora
+   l'altro campo toccato per ultimo; il campo digitato e l'ancora non
+   vengono mai sovrascritti. Test deterministici (no-overwrite) inclusi.
+
+Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+---
+ bun.lock                               |  3 +-
+ package.json                           |  3 +-
+ scripts/generate-icons.ts              | 71 ++++++++++++++++++
+ src/components/fuellog/refuel-form.tsx | 99 +++++++++++++++++---------
+ src/lib/fuel/recalc.ts                 | 75 +++++++++++++++++++
+ src/lib/fuel/validation.ts             |  6 +-
+ tests/fuel/fuel.test.ts                | 18 +++++
+ tests/fuel/recalc.test.ts              | 93 ++++++++++++++++++++++++
+ 8 files changed, 330 insertions(+), 38 deletions(-)
+ create mode 100644 scripts/generate-icons.ts
+ create mode 100644 src/lib/fuel/recalc.ts
+ create mode 100644 tests/fuel/recalc.test.ts
+
+diff --git a/bun.lock b/bun.lock
+index 9c79b11..90fc6a3 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -9,7 +9,8 @@
+         "@capacitor/core": "8",
+         "next": "^16.1.1",
+         "react": "^19.0.0",
+-        "react-dom": "^19.0.0"
++        "react-dom": "^19.0.0",
++        "sharp": "^0.34.3"
+       },
+       "devDependencies": {
+         "@capacitor/assets": "3.0.5",
+diff --git a/package.json b/package.json
+index f2d8385..bfaa397 100644
+--- a/package.json
++++ b/package.json
+@@ -14,7 +14,8 @@
+     "@capacitor/core": "8",
+     "next": "^16.1.1",
+     "react": "^19.0.0",
+-    "react-dom": "^19.0.0"
++    "react-dom": "^19.0.0",
++    "sharp": "^0.34.3"
+   },
+   "devDependencies": {
+     "@capacitor/assets": "3.0.5",
+diff --git a/scripts/generate-icons.ts b/scripts/generate-icons.ts
+new file mode 100644
+index 0000000..7769ba6
+--- /dev/null
++++ b/scripts/generate-icons.ts
+@@ -0,0 +1,71 @@
++/**
++ * Genera le icone PWA di FuelLog (192, 512, maskable 512) da un SVG
++ * disegnato su misura. Uso solo in fase di build: nessuna dipendenza
++ * aggiuntiva a runtime (sharp è già nel progetto).
++ *   bun scripts/generate-icons.ts
++ */
++import sharp from "sharp";
++import { mkdir } from "node:fs/promises";
++import path from "node:path";
++
++const OUT = path.join(process.cwd(), "public", "icons");
++
++/** Icona: pompa di carburante stilizzata, tema dark + accento arancio. */
++function iconSvg({ padding = 0, size = 512 }: { padding?: number; size?: number }): string {
++  const inner = size - padding * 2;
++  return `<?xml version="1.0" encoding="UTF-8"?>
++<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
++  <defs>
++    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
++      <stop offset="0" stop-color="#131a23"/>
++      <stop offset="1" stop-color="#0a0e13"/>
++    </linearGradient>
++    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
++      <stop offset="0" stop-color="#ffa765"/>
++      <stop offset="1" stop-color="#ff8a3d"/>
++    </linearGradient>
++  </defs>
++  <rect x="${padding}" y="${padding}" width="${inner}" height="${inner}" rx="${size * 0.22}" fill="url(#bg)"/>
++  <rect x="${padding + inner * 0.06}" y="${padding + inner * 0.06}" width="${inner * 0.88}" height="${inner * 0.88}" rx="${inner * 0.19}" fill="none" stroke="#2b3a4c" stroke-width="${size * 0.012}"/>
++  <g transform="translate(${padding}, ${padding}) scale(${inner / 512})">
++    <!-- corpo pompa -->
++    <rect x="140" y="96" width="200" height="290" rx="26" fill="url(#accent)"/>
++    <!-- finestra pompa -->
++    <rect x="170" y="128" width="140" height="120" rx="18" fill="#0a0e13"/>
++    <!-- livello carburante nella finestra -->
++    <rect x="170" y="176" width="140" height="72" rx="14" fill="#3ddc91" opacity="0.9"/>
++    <circle cx="240" cy="166" r="10" fill="#ffa765"/>
++    <!-- base -->
++    <rect x="124" y="382" width="232" height="26" rx="13" fill="#e8721c"/>
++    <!-- tubo flessibile -->
++    <path d="M340 150 h34 a40 40 0 0 1 40 40 v140 a30 30 0 0 0 60 0 V226"
++          fill="none" stroke="url(#accent)" stroke-width="26" stroke-linecap="round"/>
++    <path d="M436 190 v36" stroke="#ffa765" stroke-width="26" stroke-linecap="round"/>
++    <!-- gocce -->
++    <path d="M96 250 c0 0 -26 34 -26 52 a26 26 0 0 0 52 0 c0 -18 -26 -52 -26 -52z" fill="#3ddc91" opacity="0.85"/>
++  </g>
++</svg>`;
++}
++
++async function main() {
++  await mkdir(OUT, { recursive: true });
++
++  const jobs = [
++    { file: "icon-192.png", size: 192, padding: 0 },
++    { file: "icon-512.png", size: 512, padding: 0 },
++    // maskable: contenuto entro il safe zone (badge/round), ~20% padding
++    { file: "maskable-512.png", size: 512, padding: 56 },
++  ];
++
++  for (const job of jobs) {
++    const svg = Buffer.from(iconSvg({ size: job.size, padding: job.padding }));
++    await sharp(svg).png({ compressionLevel: 9 }).toFile(path.join(OUT, job.file));
++    console.log(`✔ ${job.file}`);
++  }
++  console.log("Icone generate in public/icons/");
++}
++
++main().catch((err) => {
++  console.error(err);
++  process.exit(1);
++});
+diff --git a/src/components/fuellog/refuel-form.tsx b/src/components/fuellog/refuel-form.tsx
+index 47bf4fa..77ca127 100644
+--- a/src/components/fuellog/refuel-form.tsx
++++ b/src/components/fuellog/refuel-form.tsx
+@@ -6,11 +6,12 @@
+  * in base all'unità di misura, validazione con messaggi inline.
+  */
+ 
+-import { useState } from "react";
++import { useRef, useState } from "react";
+ import type { Refuel, UnitSystem, Vehicle } from "@/lib/fuel/types";
+ import { sortRefuels } from "@/lib/fuel/types";
+ import { fmt, nowDatetimeLocalValue, unitLabels } from "@/lib/fuel/format";
+ import { MAX_NOTES_LENGTH, parseDecimal, validateRefuel, type RefuelDraft } from "@/lib/fuel/validation";
++import { chooseAnchorAndDerived, deriveValue, type NumField } from "@/lib/fuel/recalc";
+ import { AlertIcon, CheckIcon, FuelIcon, PencilIcon, XIcon } from "./icons";
+ 
+ export interface FormValue {
+@@ -74,52 +75,81 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
+   // Stessa semantica della validazione al submit (fonte unica in validation.ts)
+   const parseNum = (s: string) => parseDecimal(s) ?? NaN;
+ 
++  /* ------------------------------------------------------------------ */
++  /* Ricalcolo dinamico — opzione A "Smart Dependency".                 */
++  /* I tre campi sono vincolati da  spesa = litri × prezzo.             */
++  /* Quando l'utente modifica un campo, ricalcoliamo SOLO il terzo      */
++  /* campo, usando come riferimento (ancora) l'altro campo che          */
++  /* l'utente ha toccato per ultimo. Il campo in corso di modifica e    */
++  /* l'ancora non vengono MAI sovrascritti: correggere un valore        */
++  /* digitato male non produce più conflitti di sovrascrittura.        */
++  /* ------------------------------------------------------------------ */
++  const touchOrder = useRef<Record<NumField, number>>({ volume: 0, cost: 0, price: 0 });
++  const touchTick = useRef(0);
++
++  const markTouched = (f: NumField) => {
++    touchTick.current += 1;
++    touchOrder.current[f] = touchTick.current;
++  };
++
++  const resetTouch = () => {
++    touchTick.current = 0;
++    touchOrder.current = { volume: 0, cost: 0, price: 0 };
++  };
++
++  const fieldValue = (f: NumField): string =>
++    f === "price" ? price : f === "volume" ? draft.volume : draft.cost;
++
++  const setFieldValue = (f: NumField, s: string) => {
++    if (f === "price") setPrice(s);
++    else if (f === "volume") set("volume", s);
++    else set("cost", s);
++  };
++
++  const fmtNum = (n: number, digits: number) => n.toFixed(digits).replace(".", ",");
++
++  const recalc = (edited: NumField, editedValue: number) => {
++    const isValid = (f: NumField) => {
++      const n = parseNum(fieldValue(f));
++      return Number.isFinite(n) && n > 0;
++    };
++    const { anchor, derived } = chooseAnchorAndDerived(edited, touchOrder.current, isValid);
++    // Valori correnti: il campo modificato usa il valore appena digitato
++    // (lo stato React si aggiorna in modo asincrono, quindi draft/price
++    // nella chiusura non lo rifletterebbero ancora).
++    const val = (f: NumField) => (f === edited ? editedValue : parseNum(fieldValue(f)));
++    const res = deriveValue(derived, {
++      volume: val("volume"),
++      cost: val("cost"),
++      price: val("price"),
++    });
++    if (!res) return;
++    // Non riscrivere se il campo derivato è già coerente: evita ritocchi
++    // e riformattazioni inutili (es. "50" → "50,00") a ogni tasto.
++    const cur = parseNum(fieldValue(derived));
++    if (cur !== null && Math.abs(cur - res.value) < 1e-9) return;
++    setFieldValue(derived, fmtNum(res.value, res.digits));
++  };
++
+   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const val = e.target.value;
+     set("volume", val);
+-    const v = parseNum(val);
+-    const c = parseNum(draft.cost);
+-    const p = parseNum(price);
+-    
+-    if (!isNaN(v) && v > 0 && !isNaN(c) && c > 0) {
+-      setPrice((c / v).toFixed(3).replace('.', ','));
+-    } else if (!isNaN(v) && v > 0 && !isNaN(p) && p > 0) {
+-      set("cost", (v * p).toFixed(2).replace('.', ','));
+-    }
++    markTouched("volume");
++    recalc("volume", parseNum(val));
+   };
+ 
+   const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const val = e.target.value;
+     set("cost", val);
+-    const c = parseNum(val);
+-    const v = parseNum(draft.volume);
+-    const p = parseNum(price);
+-    
+-    if (!isNaN(c) && c > 0 && !isNaN(p) && p > 0 && isNaN(v)) {
+-      set("volume", (c / p).toFixed(2).replace('.', ','));
+-    } else if (!isNaN(c) && c > 0 && !isNaN(v) && v > 0) {
+-      setPrice((c / v).toFixed(3).replace('.', ','));
+-    } else if (!isNaN(c) && c > 0 && !isNaN(p) && p > 0) {
+-      // Se abbiamo tutti e tre, l'utente sta aggiornando la spesa, ricalcoliamo i litri per coerenza
+-      set("volume", (c / p).toFixed(2).replace('.', ','));
+-    }
++    markTouched("cost");
++    recalc("cost", parseNum(val));
+   };
+ 
+   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+     const val = e.target.value;
+     setPrice(val);
+-    const p = parseNum(val);
+-    const c = parseNum(draft.cost);
+-    const v = parseNum(draft.volume);
+-
+-    // Il volume è la misura fisica registrata: cambiando il prezzo si
+-    // aggiorna la spesa (v × p), mai il volume. Solo senza volume valido
+-    // deriviamo i litri dalla spesa già inserita.
+-    if (!isNaN(p) && p > 0 && !isNaN(v) && v > 0) {
+-      set("cost", (v * p).toFixed(2).replace('.', ','));
+-    } else if (!isNaN(p) && p > 0 && !isNaN(c) && c > 0) {
+-      set("volume", (c / p).toFixed(2).replace('.', ','));
+-    }
++    markTouched("price");
++    recalc("price", parseNum(val));
+   };
+ 
+   const handleSubmit = (e: React.FormEvent) => {
+@@ -148,6 +178,7 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
+       setDraft(emptyDraft());
+       setPrice("");
+       setError(null);
++      resetTouch();
+     }
+   };
+ 
+diff --git a/src/lib/fuel/recalc.ts b/src/lib/fuel/recalc.ts
+new file mode 100644
+index 0000000..411cffb
+--- /dev/null
++++ b/src/lib/fuel/recalc.ts
+@@ -0,0 +1,75 @@
++/**
++ * FuelLog — Ricalcolo dinamico Prezzo/L · Spesa Totale · Litri.
++ *
++ * Opzione A "Smart Dependency": i tre campi sono vincolati da
++ *   Spesa Totale = Litri × Prezzo/L
++ * Quando l'utente modifica un campo, ricalcoliamo SOLO il terzo campo,
++ * usando come riferimento (ancora) l'altro campo che l'utente ha toccato
++ * per ultimo. Il campo in corso di modifica e l'ancora non vengono mai
++ * sovrascritti: così correggere un valore digitato male non genera più
++ * conflitti di sovrascrittura.
++ *
++ * Logica pura (nessun React): il componente la chiama a ogni change e la
++ * test copre qui, in modo deterministico, il comportamento "no-overwrite".
++ */
++
++export type NumField = "volume" | "cost" | "price";
++export const NUM_FIELDS: readonly NumField[] = ["volume", "cost", "price"];
++
++/**
++ * Priorità "a riposo" per scegliere l'ancora quando l'utente non ha ancora
++ * toccato (o ha toccato in pari) gli altri campi: litri e prezzo sono le
++ * misure dirette, la spesa è il totale calcolato.
++ */
++const DEFAULT_ANCHOR: Record<NumField, NumField[]> = {
++  volume: ["price", "cost"],
++  cost: ["volume", "price"],
++  price: ["volume", "cost"],
++};
++
++/**
++ * Decide, dopo la modifica di `edited`, quale campo fare da ancora e quale
++ * ricalcolare (il derivato, cioè il terzo).
++ *
++ *  - Ancora = l'altro campo toccato più di recente dall'utente
++ *    (`touched` è un contatore monotono per campo, scritto solo quando
++ *    l'utente digita — non quando il campo è riempito in automatico).
++ *  - A parità (nessuna storia di input) si usa la priorità a riposo,
++ *    preferendo l'ancora che ha un valore valido (`isValid`).
++ *
++ * Invariante: `anchor` e `derived` sono i due campi diversi da `edited`,
++ * quindi il campo modificato non può mai risultare derivato.
++ */
++export function chooseAnchorAndDerived(
++  edited: NumField,
++  touched: Record<NumField, number>,
++  isValid: (f: NumField) => boolean
++): { anchor: NumField; derived: NumField } {
++  const others = NUM_FIELDS.filter((f) => f !== edited);
++  const [a, b] = others;
++  let anchor: NumField;
++  if (touched[a] === touched[b]) {
++    anchor = DEFAULT_ANCHOR[edited].find(isValid) ?? a;
++  } else {
++    anchor = touched[a] > touched[b] ? a : b;
++  }
++  const derived = others.find((f) => f !== anchor)!;
++  return { anchor, derived };
++}
++
++/**
++ * Calcola il valore del campo `derived` a partire dai due campi noti,
++ * restituendo anche i decimali con cui formattarlo.
++ * Restituisce null se i due campi necessari non sono entrambi > 0.
++ */
++export function deriveValue(
++  derived: NumField,
++  values: Record<NumField, number>
++): { value: number; digits: number } | null {
++  const { volume: v, cost: c, price: p } = values;
++  const pos = (n: number) => Number.isFinite(n) && n > 0;
++  if (derived === "cost" && pos(v) && pos(p)) return { value: v * p, digits: 2 };
++  if (derived === "volume" && pos(c) && pos(p)) return { value: c / p, digits: 2 };
++  if (derived === "price" && pos(c) && pos(v)) return { value: c / v, digits: 3 };
++  return null;
++}
+diff --git a/src/lib/fuel/validation.ts b/src/lib/fuel/validation.ts
+index 7648223..54588b8 100644
+--- a/src/lib/fuel/validation.ts
++++ b/src/lib/fuel/validation.ts
+@@ -192,8 +192,10 @@ const uid = (): string => {
+ };
+ 
+ function toFiniteNumber(v: unknown, min: number, max: number, fallback: number): number {
+-  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v.replace(",", ".")) : NaN;
+-  if (!Number.isFinite(n)) return fallback;
++  // Stringhe: stessa normalizzazione virgola/punto del form e del CSV
++  // (normalizeDecimal), così "1.234,56" e "1,234.56" non producono NaN.
++  const n = typeof v === "number" ? v : typeof v === "string" ? parseDecimal(v) : null;
++  if (n === null || !Number.isFinite(n)) return fallback;
+   return Math.min(max, Math.max(min, n));
+ }
+ 
+diff --git a/tests/fuel/fuel.test.ts b/tests/fuel/fuel.test.ts
+index 4449ebc..2a599fc 100644
+--- a/tests/fuel/fuel.test.ts
++++ b/tests/fuel/fuel.test.ts
+@@ -5,6 +5,7 @@ import { consumptionHistory } from '../../src/lib/fuel/history';
+ import { backupReminderDue, dataFingerprint, DAY } from '../../src/lib/fuel/backup-reminder';
+ import { computeStats } from '../../src/lib/fuel/calc';
+ import { applyImport, buildBackup, parseBackupFile } from '../../src/lib/fuel/storage';
++import { sanitizeRefuel } from '../../src/lib/fuel/validation';
+ import type { Refuel, VehiclesData } from '../../src/lib/fuel/types';
+ const r = (day: number, odometer: number, volume: number, full = false): Refuel => ({
+   id: String(day), date: `2025-01-${String(day).padStart(2, '0')}T12:00`,
+@@ -102,3 +103,20 @@ describe('Funzioni offline', () => {
+     expect(dataFingerprint({...data(), activeVehicleId: null})).toBe(fingerprint);
+   });
+ });
++
++describe('Sanitize decimali (import JSON)', () => {
++  const base = { id: 'x', date: '2025-01-02T12:00', full: false, notes: '', createdAt: '2025-01-01T12:00:00.000Z' };
++  test('stringhe con virgola/punto normalizzate come form e CSV', () => {
++    const a = sanitizeRefuel({ ...base, odometer: 1000, volume: '12,5', cost: '25.00' });
++    expect(a).toMatchObject({ volume: 12.5, cost: 25 });
++    expect(sanitizeRefuel({ ...base, odometer: 1000, volume: '1.234,56', cost: '0' })!.volume).toBe(1234.56);
++    expect(sanitizeRefuel({ ...base, odometer: '1,234.56', volume: '10', cost: '0' })!.odometer).toBe(1234.56);
++    expect(sanitizeRefuel({ ...base, odometer: '1,000,000', volume: '10', cost: '0' })!.odometer).toBe(1000000);
++    expect(sanitizeRefuel({ ...base, odometer: 1000, volume: '10.157', cost: '0' })!.volume).toBe(10.157);
++  });
++  test('stringhe non numeriche o campi essenziali mancanti → fallback/rifiuto', () => {
++    expect(sanitizeRefuel({ ...base, odometer: 1000 })).toBeNull(); // volume mancante → rifiuto
++    expect(sanitizeRefuel({ ...base, odometer: 'n/a', volume: 10 })).toBeNull(); // odometro non valido → rifiuto
++    expect(sanitizeRefuel({ ...base, odometer: 1000, volume: 10, cost: 'abc' })!.cost).toBe(0); // cost non valido → 0
++  });
++});
+diff --git a/tests/fuel/recalc.test.ts b/tests/fuel/recalc.test.ts
+new file mode 100644
+index 0000000..6edae1e
+--- /dev/null
++++ b/tests/fuel/recalc.test.ts
+@@ -0,0 +1,93 @@
++/// <reference types="bun-types" />
++import { describe, expect, test } from 'bun:test';
++import {
++  chooseAnchorAndDerived,
++  deriveValue,
++  type NumField,
++} from '../../src/lib/fuel/recalc';
++
++const T0 = { volume: 0, cost: 0, price: 0 };
++const ALWAYS = () => true;
++
++describe('Ricalcolo dinamico (Smart Dependency)', () => {
++  test('il campo modificato non può mai essere quello derivato (invariante no-overwrite)', () => {
++    const touched = { volume: 1, cost: 2, price: 3 };
++    for (const edited of ['volume', 'cost', 'price'] as NumField[]) {
++      const { anchor, derived } = chooseAnchorAndDerived(edited, touched, ALWAYS);
++      expect(anchor).not.toBe(edited);
++      expect(derived).not.toBe(edited);
++      // ancora + derivato = esattamente i due campi restanti
++      expect([anchor, derived].sort()).toEqual(
++        (['volume', 'cost', 'price'] as NumField[]).filter((f) => f !== edited).sort(),
++      );
++    }
++  });
++
++  test('correzione del prezzo: ancora=litri (toccato prima), si ricalcola solo la spesa', () => {
++    // l'utente ha digitato prima i litri, poi il prezzo (la spesa è riempita da noi)
++    const touched = { volume: 1, cost: 0, price: 2 };
++    const { anchor, derived } = chooseAnchorAndDerived('price', touched, ALWAYS);
++    expect(anchor).toBe('volume');
++    expect(derived).toBe('cost');
++    const res = deriveValue(derived, { volume: 50, cost: 92.95, price: 1.959 });
++    expect(res).not.toBeNull();
++    expect(res!.digits).toBe(2);
++    expect(res!.value).toBeCloseTo(50 * 1.959, 9);
++    // i litri (ancora) non vengono mai riscritti
++  });
++
++  test('litri e spesa digitati a mano → il prezzo è derivato', () => {
++    const touched = { volume: 1, cost: 2, price: 0 };
++    const { anchor, derived } = chooseAnchorAndDerived('cost', touched, ALWAYS);
++    expect(anchor).toBe('volume'); // tocco più recente rispetto al prezzo
++    expect(derived).toBe('price');
++    const res = deriveValue('price', { volume: 50, cost: 97.95, price: 0 });
++    expect(res).not.toBeNull();
++    expect(res!.digits).toBe(3);
++    expect(res!.value).toBeCloseTo(97.95 / 50, 9);
++  });
++
++  test('a riposo (nessun tocco) vince la priorità: modificare i litri usa il prezzo come ancora', () => {
++    // solo il prezzo ha un valore valido
++    const isValid = (f: NumField) => f === 'price';
++    const { anchor, derived } = chooseAnchorAndDerived('volume', T0, isValid);
++    expect(anchor).toBe('price');
++    expect(derived).toBe('cost');
++  });
++
++  test('a riposo senza valori validi: ancor/derivato restano i due campi restanti', () => {
++    const { anchor, derived } = chooseAnchorAndDerived('volume', T0, () => false);
++    expect([anchor, derived].sort()).toEqual(['cost', 'price']);
++    expect(anchor).not.toBe('volume');
++    expect(derived).not.toBe('volume');
++  });
++
++  test('pulire un campo (valore non numerico) non ricalcola nulla', () => {
++    // editedValue = NaN → uno dei due fattori non è > 0 → null
++    expect(deriveValue('cost', { volume: NaN, cost: 0, price: 1.859 })).toBeNull();
++    expect(deriveValue('volume', { volume: 0, cost: 92.95, price: NaN })).toBeNull();
++    expect(deriveValue('price', { volume: 50, cost: 0, price: NaN })).toBeNull();
++  });
++
++  test('deriveValue: le tre formule e i casi null', () => {
++    const cost = deriveValue('cost', { volume: 40, cost: 0, price: 1.8 });
++    expect(cost).not.toBeNull();
++    expect(cost!.value).toBeCloseTo(72, 9);
++    expect(cost!.digits).toBe(2);
++
++    const vol = deriveValue('volume', { volume: 0, cost: 72, price: 1.8 });
++    expect(vol).not.toBeNull();
++    expect(vol!.value).toBeCloseTo(40, 9);
++    expect(vol!.digits).toBe(2);
++
++    const price = deriveValue('price', { volume: 40, cost: 72, price: 0 });
++    expect(price).not.toBeNull();
++    expect(price!.value).toBeCloseTo(1.8, 9);
++    expect(price!.digits).toBe(3);
++
++    // fattori mancanti o non positivi → null
++    expect(deriveValue('cost', { volume: 0, cost: 0, price: 1.8 })).toBeNull();
++    expect(deriveValue('volume', { volume: 0, cost: 0, price: 1.8 })).toBeNull();
++    expect(deriveValue('price', { volume: 40, cost: 0, price: 0 })).toBeNull();
++  });
++});
+-- 
+2.39.5
+
