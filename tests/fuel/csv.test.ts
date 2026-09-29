@@ -10,6 +10,7 @@ import {
   parseDelimitedRows,
 } from '../../src/lib/fuel/csv';
 import { buildBackup, parseBackupFile } from '../../src/lib/fuel/storage';
+import { parseDecimal } from '../../src/lib/fuel/validation';
 import type { Refuel, VehiclesData } from '../../src/lib/fuel/types';
 
 const r = (id: string, day: number, odometer: number, volume: number, full = false, notes = ''): Refuel => ({
@@ -34,10 +35,22 @@ describe('CSV/TSV: parsing', () => {
     expect(parseDecimalFlexible('12.5')).toBe(12.5);
     expect(parseDecimalFlexible('1.234,56')).toBe(1234.56);
     expect(parseDecimalFlexible('1,234.56')).toBe(1234.56);
+    expect(parseDecimalFlexible('1,000,000')).toBe(1000000);
+    expect(parseDecimalFlexible('1.000.000')).toBe(1000000);
     expect(parseDecimalFlexible('1234')).toBe(1234);
-    expect(parseDecimalFlexible('12,34,56')).toBeNull();
     expect(parseDecimalFlexible('abc')).toBeNull();
     expect(parseDecimalFlexible('')).toBeNull();
+  });
+
+  test('ambiguità: un solo punto è decimale (10.157 non diventa 10mila)', () => {
+    expect(parseDecimalFlexible('10.157')).toBe(10.157);
+    expect(parseDecimalFlexible('1.859')).toBe(1.859);
+    // stessa semantica in validazione (fonte unica)
+    expect(parseDecimal('10.157')).toBe(10.157);
+    expect(parseDecimal('1.234,56')).toBe(1234.56);
+    expect(parseDecimal('1,000,000')).toBe(1000000);
+    expect(parseDecimal('12,34,56')).toBe(123456);
+    expect(parseDecimal('12ab')).toBeNull();
   });
   test('date ISO con e senza ora; rigetta date inesistenti', () => {
     expect(parseDateCell('2025-01-05')).toBe('2025-01-05T00:00');

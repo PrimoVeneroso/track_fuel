@@ -13,7 +13,7 @@ import type { AppSettings, Refuel, VehiclesData, Vehicle } from './types';
 import { SCHEMA_VERSION, sortRefuels } from './types';
 import { firstOdometerConflict } from './calc';
 import { unitLabels } from './format';
-import { MAX_NAME_LENGTH, MAX_NOTES_LENGTH, uid, validateRefuel, type RefuelDraft } from './validation';
+import { MAX_NAME_LENGTH, MAX_NOTES_LENGTH, parseDecimal, uid, validateRefuel, type RefuelDraft } from './validation';
 import { triggerFileDownloadOrShare, type ExportResult } from './download';
 
 export type Delimiter = ';' | ',' | '\t' | '|';
@@ -283,33 +283,10 @@ function stripFormulaPrefix(raw: string): string {
   return raw.replace(/^'(?=[\s]*[=+@-])/, '').trim();
 }
 
-/** "12,5", "12.5", "1.234,56", "1,234.56" → numero. */
+/** "12,5", "12.5", "1.234,56", "1,234.56" → numero.
+ *  Stessa semantica della validazione del form (fonte unica in validation.ts). */
 export function parseDecimalFlexible(raw: string): number | null {
-  const t = (raw ?? '').trim();
-  if (!t) return null;
-  let s = t.replace(/\s+/g, '');
-
-  if (s.includes(',') && s.includes('.')) {
-    if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
-      s = s.replace(/,/g, '');
-    } else {
-      s = s.replace(/\./g, '').replace(',', '.');
-    }
-  } else if (s.includes(',')) {
-    if ((s.match(/,/g) || []).length > 1) {
-      s = s.replace(/,/g, '');
-    } else {
-      s = s.replace(',', '.');
-    }
-  } else if (s.includes('.')) {
-    if ((s.match(/\./g) || []).length > 1) {
-      s = s.replace(/\./g, '');
-    }
-  }
-
-  if (s === '' || !/^-?\d*\.?\d*$/.test(s)) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  return parseDecimal(raw);
 }
 
 /** "AAAA-MM-GG", "AAAA-MM-GG HH:MM", "AAAA-MM-GGTHH:MM[:SS]" → "YYYY-MM-DDTHH:mm". */

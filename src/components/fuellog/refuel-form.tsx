@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { Refuel, UnitSystem, Vehicle } from "@/lib/fuel/types";
 import { sortRefuels } from "@/lib/fuel/types";
 import { fmt, nowDatetimeLocalValue, unitLabels } from "@/lib/fuel/format";
-import { MAX_NOTES_LENGTH, validateRefuel, type RefuelDraft } from "@/lib/fuel/validation";
+import { MAX_NOTES_LENGTH, parseDecimal, validateRefuel, type RefuelDraft } from "@/lib/fuel/validation";
 import { AlertIcon, CheckIcon, FuelIcon, PencilIcon, XIcon } from "./icons";
 
 export interface FormValue {
@@ -71,15 +71,8 @@ export function RefuelForm({ vehicle, unit, editing, onSubmit, onCancelEdit, onE
     editing && editing.volume > 0 ? (editing.cost / editing.volume).toFixed(3).replace('.', ',') : ""
   );
 
-  const parseNum = (s: string) => {
-    if (!s) return NaN;
-    const t = s.trim();
-    if (!t) return NaN;
-    // anche con separatori delle migliaia: "1.234,56" oppure "1,234.56"
-    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) return parseFloat(t.replace(/\./g, '').replace(',', '.'));
-    if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return parseFloat(t.replace(/,/g, ''));
-    return parseFloat(t.replace(',', '.'));
-  };
+  // Stessa semantica della validazione al submit (fonte unica in validation.ts)
+  const parseNum = (s: string) => parseDecimal(s) ?? NaN;
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
